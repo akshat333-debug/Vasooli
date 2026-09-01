@@ -10,8 +10,11 @@ from collections import Counter
 from dotenv import load_dotenv
 
 from .diagnose import diagnose_batch
+from .execute import run_batch
 from .ledger import Ledger
-from .sim.seed import generate_batch
+from .policy import RecoveryPolicy
+from .report import render
+from .sim.seed import BATCH_NOW, generate_batch
 
 
 def _cmd_seed(args: argparse.Namespace) -> int:
@@ -49,6 +52,47 @@ def _cmd_diagnose(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_run(args: argparse.Namespace) -> int:
+    """Run both arms over one identical batch and report the comparison."""
+    batch = generate_batch(args.n, seed=args.seed)
+    ledger = Ledger(args.db)
+
+    _, llm_stats = diagnose_batch(batch, use_llm=not args.no_llm)
+
+    baseline = run_batch(batch, arm="baseline", now=BATCH_NOW, ledger=ledger)
+    sequencer = run_batch(batch, arm="sequencer", now=BATCH_NOW, ledger=ledger)
+
+    v = ledger.verify()
+    out = render(baseline, sequencer, batch, ledger_ok=v.ok, ledger_rows=v.rows,
+                 llm_stats=None if args.no_llm else llm_stats)
+    ledger.close()
+
+    print(out)
+    if args.out:
+        with open(args.out, "w") as fh:
+            fh.write(out + "\n")
+        print(f"\nwritten to {args.out}")
+    return 0
+
+
+def _cmd_demo_trip(args: argparse.Namespace) -> int:
+    """Demonstrate the batch breaker stopping a run mid-flight."""
+    batch = generate_batch(args.n, seed=args.seed)
+    ledger = Ledger(args.db)
+    policy = RecoveryPolicy(max_actions_per_batch=args.cap)
+    res = run_batch(batch, arm="sequencer", now=BATCH_NOW, ledger=ledger, policy=policy)
+    print(f"Batch breaker set to {args.cap} unattended actions.\n")
+    print(f"  actions taken : {res.actions_taken}")
+    print(f"  tripped       : {res.tripped}")
+    print(f"  soft warnings : {res.soft_warnings or 'none'}")
+    print("\nThe run stopped rather than continuing to move money past its ceiling.")
+    for row in ledger.rows(res.run_id):
+        if row["event"] == "fuse_trip":
+            print(f"  ledger row {row['idx']}: {row['verdict']}")
+    ledger.close()
+    return 0
+
+
 def _cmd_verify_ledger(args: argparse.Namespace) -> int:
     L = Ledger(args.db)
     r = L.verify()
@@ -76,6 +120,21 @@ def main(argv: list[str] | None = None) -> int:
     d.add_argument("--seed", type=int, default=42)
     d.add_argument("--no-llm", action="store_true", help="deterministic dict only")
     d.set_defaults(fn=_cmd_diagnose)
+
+    r = sub.add_parser("run", help="run both arms and report the comparison")
+    r.add_argument("-n", type=int, default=100)
+    r.add_argument("--seed", type=int, default=42)
+    r.add_argument("--db", default="vasooli.db")
+    r.add_argument("--no-llm", action="store_true")
+    r.add_argument("--out", help="also write the report to this file")
+    r.set_defaults(fn=_cmd_run)
+
+    t = sub.add_parser("demo-trip", help="show the batch breaker halting a run")
+    t.add_argument("-n", type=int, default=100)
+    t.add_argument("--seed", type=int, default=42)
+    t.add_argument("--cap", type=int, default=25)
+    t.add_argument("--db", default="vasooli-demo.db")
+    t.set_defaults(fn=_cmd_demo_trip)
 
     v = sub.add_parser("verify-ledger", help="recompute the audit hash chain")
     v.add_argument("--db", default="vasooli.db")
