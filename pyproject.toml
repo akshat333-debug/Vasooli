@@ -1,0 +1,25 @@
+[project]
+name = "vasooli"
+version = "0.1.0"
+description = "Bounded subscription-recovery sequencer. Treats mandate retries as a regulated, three-attempt budget."
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.9",
+    "runfuse[openai]>=0.1",
+    "openai>=1.50",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+razorpay = ["razorpay>=1.4"]
+
+[project.scripts]
+vasooli = "vasooli.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
