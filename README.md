@@ -308,6 +308,8 @@ web/                      Next.js 15 + Tailwind v4, static-exportable
     └── lib/data.ts       types mirroring export.py; computes nothing
 ```
 
+Planned upgrades, ranked with effort estimates and honest notes on which ones are easy to do badly: [`NEXT_STEPS.md`](NEXT_STEPS.md).
+
 Prior work this builds on: [RunFuse](https://github.com/akshat333-debug/RunFuse) (bounded execution, imported here), [QuantProto](https://github.com/akshat333-debug/QuantProto) (hash-chained ledger; fail loudly rather than silently substitute), [AutoWatch](https://github.com/akshat333-debug/AutoWatch) (rules-first detection, model second).
 
 MIT.
