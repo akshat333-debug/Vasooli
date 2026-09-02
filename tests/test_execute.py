@@ -1,6 +1,5 @@
 """The arm comparison must be fair, and physical limits must bind both arms."""
 
-import tempfile
 
 import pytest
 

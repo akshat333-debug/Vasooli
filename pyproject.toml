@@ -8,6 +8,7 @@ dependencies = [
     "runfuse[openai]>=0.1",
     "openai>=1.50",
     "python-dotenv>=1.0",
+    "requests>=2.31",
 ]
 
 [project.optional-dependencies]
@@ -23,3 +24,10 @@ build-backend = "hatchling.build"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff.lint]
+# DTZ001: naive datetimes are deliberate here. Batch times are fixed reference
+# points chosen for reproducibility, not wall-clock instants — a timezone would
+# add ambiguity to a value whose whole purpose is to be identical on every run.
+# The one real timestamp (ledger row time) does use timezone-aware UTC.
+ignore = ["DTZ001", "C408", "RUF015"]

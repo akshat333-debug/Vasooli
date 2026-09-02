@@ -19,7 +19,7 @@ import hashlib
 import json
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -89,7 +89,7 @@ class Ledger:
         important field in the row: a log that records what happened without
         recording why is not an audit trail.
         """
-        ts = datetime.now(timezone.utc).isoformat()
+        ts = datetime.now(UTC).isoformat()
         body = {
             "ts": ts,
             "run_id": run_id,

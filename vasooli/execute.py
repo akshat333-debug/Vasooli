@@ -40,7 +40,6 @@ system against a non-compliant one would prove nothing.
 from __future__ import annotations
 
 import hashlib
-import random
 import uuid
 from datetime import datetime, timedelta
 

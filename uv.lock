@@ -631,6 +631,7 @@ dependencies = [
     { name = "openai" },
     { name = "pydantic" },
     { name = "python-dotenv" },
+    { name = "requests" },
     { name = "runfuse", extra = ["openai"] },
 ]
 
@@ -649,6 +650,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "razorpay", marker = "extra == 'razorpay'", specifier = ">=1.4" },
+    { name = "requests", specifier = ">=2.31" },
     { name = "runfuse", extras = ["openai"], specifier = ">=0.1" },
 ]
 provides-extras = ["dev", "razorpay"]

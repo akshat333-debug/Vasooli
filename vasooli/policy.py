@@ -30,7 +30,7 @@ from .models import MAX_RETRY_BUDGET, RBI_STANDARD_CAP_PAISE
 class RecoveryTripped(Exception):
     """A batch-level limit was breached. Carries the verdict and the state."""
 
-    def __init__(self, verdict: str, state: "RecoveryState") -> None:
+    def __init__(self, verdict: str, state: RecoveryState) -> None:
         super().__init__(verdict)
         self.verdict = verdict
         self.state = state

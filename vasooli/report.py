@@ -23,7 +23,7 @@ from .execute import BatchResult
 from .models import AtRiskRecord
 
 
-def _rs(paise: int | float) -> str:
+def _rs(paise: float) -> str:
     return f"Rs {paise / 100:,.2f}"
 
 
@@ -94,9 +94,9 @@ def render(
         f"  (of which {_rs(s_over)} came from debits above the RBI standard cap)")
     if b_over > s_over:
         add("")
-        add(f"  NOTE: the baseline's raw total is higher only because it made")
-        add(f"  unattended debits above the cap. Those are not recoveries a merchant")
-        add(f"  may bank; they are compliance failures. Hence the adjusted headline.")
+        add("  NOTE: the baseline's raw total is higher only because it made")
+        add("  unattended debits above the cap. Those are not recoveries a merchant")
+        add("  may bank; they are compliance failures. Hence the adjusted headline.")
     add("")
 
     add("-" * 78)

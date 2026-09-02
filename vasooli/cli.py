@@ -13,6 +13,7 @@ from .diagnose import diagnose_batch
 from .execute import run_batch
 from .ledger import Ledger
 from .policy import RecoveryPolicy
+from .razorpay_adapter import run_live_probe
 from .report import render
 from .sim.seed import BATCH_NOW, generate_batch
 
@@ -93,6 +94,30 @@ def _cmd_demo_trip(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_live(args: argparse.Namespace) -> int:
+    """Exercise the real Razorpay test-mode API on a small slice of the batch."""
+    import uuid
+
+    batch = generate_batch(args.n, seed=args.seed)
+    ledger = Ledger(args.db)
+    run_id = uuid.uuid4().hex[:12]
+    caps = run_live_probe(batch, ledger, run_id=run_id, limit=args.limit)
+
+    print("Razorpay test-mode capability probe")
+    print(f"  {caps.summary()}")
+    if caps.detail:
+        print(f"  {caps.detail}")
+    print()
+    for row in ledger.rows(run_id):
+        print(f"  [{row['event']}] {row['verdict']}")
+    ledger.close()
+    if not caps.can_run_live_subscription_demo:
+        print("\nSubscriptions/Plans are not enabled on this test account, so the")
+        print("live demo uses Orders. The batch measurement remains simulated and")
+        print("the report states this. Nothing was faked to cover the gap.")
+    return 0
+
+
 def _cmd_verify_ledger(args: argparse.Namespace) -> int:
     L = Ledger(args.db)
     r = L.verify()
@@ -135,6 +160,13 @@ def main(argv: list[str] | None = None) -> int:
     t.add_argument("--cap", type=int, default=25)
     t.add_argument("--db", default="vasooli-demo.db")
     t.set_defaults(fn=_cmd_demo_trip)
+
+    lv = sub.add_parser("live", help="probe and exercise the real Razorpay test API")
+    lv.add_argument("-n", type=int, default=100)
+    lv.add_argument("--seed", type=int, default=42)
+    lv.add_argument("--limit", type=int, default=3)
+    lv.add_argument("--db", default="vasooli.db")
+    lv.set_defaults(fn=_cmd_live)
 
     v = sub.add_parser("verify-ledger", help="recompute the audit hash chain")
     v.add_argument("--db", default="vasooli.db")
