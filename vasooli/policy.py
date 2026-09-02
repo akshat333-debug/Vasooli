@@ -93,6 +93,16 @@ class RecoveryFuse:
         """
         p, s = self.policy, self.state
 
+        # A non-positive debit is not a real action, and letting one through
+        # would *reduce* the batch's attempted total — quietly raising the
+        # ceiling for every action after it. Cheap guard at a money boundary.
+        if amount_paise <= 0:
+            raise RecoveryTripped(
+                f"invalid_amount: {amount_paise} paise — a debit must be a "
+                "positive amount; refusing to account it against the batch",
+                s,
+            )
+
         if s.actions_taken + 1 > p.max_actions_per_batch:
             raise RecoveryTripped(
                 f"max_actions_per_batch: {s.actions_taken + 1} > {p.max_actions_per_batch} "

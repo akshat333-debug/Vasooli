@@ -51,6 +51,8 @@ export interface BatchRecord {
   diagnosis_source: string;
   diagnosis_rationale: string;
   action: Action;
+  /** Which stopping rule decided this, 1-8, as reported by decide.py. */
+  rule_fired: number;
   verdict: string;
   scheduled_at: string | null;
   expected_success: number | null;

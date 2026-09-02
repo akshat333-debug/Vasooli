@@ -235,7 +235,7 @@ Four views:
 | **Audit trail** | The 434 hash-chained rows with chain verification |
 | **Method** | What is real, what is simulated, and every defect found |
 
-The interface reflects whichever run produced its `batch.json`, including that run's failures. The committed export was generated while the LLM gateway was unreachable, so the Method view reports the AI stage as degraded and the exception list shows 8 `MANDATE_REVOKED` / 4 unclassified rather than the 9 / 3 in `BATCH_REPORT.txt`, which was produced with the model available. That difference is the containment path doing its job — unmapped failures went to a person instead of a guess — and it is shown rather than papered over. `uv run vasooli export` re-syncs the two.
+The interface reflects whichever run produced its `batch.json`, including that run's failures — if the model was unreachable, the Method view says so and reports the AI stage as degraded rather than hiding it. Re-sync with `uv run vasooli export`.
 
 ### Why it does not look like a finance dashboard
 

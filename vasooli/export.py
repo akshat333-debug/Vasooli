@@ -101,6 +101,7 @@ def build_payload(
             "diagnosis_source": diag.source,
             "diagnosis_rationale": diag.rationale,
             "action": dec.action.value,
+            "rule_fired": dec.rule_fired,
             "verdict": dec.verdict,
             "scheduled_at": dec.scheduled_at.isoformat() if dec.scheduled_at else None,
             "expected_success": dec.expected_success,

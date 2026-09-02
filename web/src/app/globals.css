@@ -24,7 +24,10 @@
   --color-ink: #1c1b19;
   --color-ink-soft: #3a3834;
   --color-ink-mute: #6f6a60;
-  --color-ink-faint: #9a9488;
+  /* 4.54:1 on paper, 4.92:1 on raised — WCAG AA for small text.
+     The original #9a9488 measured 2.62:1 and failed. Muted is a
+     legitimate look; illegible is not. */
+  --color-ink-faint: #726c5e;
   --color-rule: #ddd8cb;
 
   --color-sage: #8fae86;
@@ -34,6 +37,9 @@
   --color-mustard: #d9ac43;
   --color-mustard-soft: #f0deb0;
   --color-clay: #b5533f;
+  /* Clay is a fill colour; as TEXT on a clay-soft ground it measured
+     4.01:1. This darker cut is 4.97:1 and is used for clay lettering. */
+  --color-clay-ink: #a4442f;
   --color-clay-soft: #e8c3ba;
 
   --font-display: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;

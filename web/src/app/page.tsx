@@ -77,7 +77,7 @@ export default function BatchPage() {
       >
         <div className="grid gap-6 p-6 sm:p-8 lg:grid-cols-[1.35fr_1fr] lg:gap-10">
           <div>
-            <p className="eyebrow mb-3 !text-clay">Why the raw totals disagree</p>
+            <p className="eyebrow mb-3 !text-clay-ink">Why the raw totals disagree</p>
             <h2 className="display text-[21px] leading-snug font-semibold sm:text-[25px]">
               On gross recovery the baseline wins. It wins by making a debit it
               is not allowed to make.

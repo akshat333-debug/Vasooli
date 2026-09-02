@@ -68,6 +68,11 @@ class Decision(BaseModel):
     verdict: str
     #: True when a Hinglish customer nudge should be drafted for this record.
     wants_nudge: bool = False
+    #: Which numbered stopping rule decided this record (1-8, see module
+    #: docstring). Exported so a viewer can show the trace without
+    #: reimplementing the rule ordering — a duplicated decision rule living in
+    #: a UI is a rule that will silently drift out of step with this file.
+    rule_fired: int = 0
 
 
 def days_to_replenish(at: datetime, salary_day: int) -> int:
@@ -149,13 +154,14 @@ def best_retry_time(
 def decide(rec: AtRiskRecord, failure_class: FailureClass, now: datetime) -> Decision:
     """Apply the stopping rules, then schedule. See module docstring for order."""
 
-    def d(action: Action, verdict: str, **kw) -> Decision:
+    def d(rule: int, action: Action, verdict: str, **kw) -> Decision:
         return Decision(subscription_id=rec.subscription_id, action=action,
-                        verdict=verdict, **kw)
+                        verdict=verdict, rule_fired=rule, **kw)
 
     # 1. The budget is gone. Attempting anything here halts the subscription.
     if rec.attempts_remaining <= 0:
         return d(
+            1,
             Action.STOP_EXHAUSTED,
             f"stopped: retry budget exhausted ({rec.attempts_used}/"
             f"{rec.attempts_used}) — a further attempt would halt the subscription",
@@ -165,6 +171,7 @@ def decide(rec: AtRiskRecord, failure_class: FailureClass, now: datetime) -> Dec
     # 2. The failure class makes a retry pointless.
     if is_terminal(failure_class):
         return d(
+            2,
             Action.STOP_TERMINAL,
             f"stopped: {failure_class.value} — no retry can succeed, "
             f"{rec.attempts_remaining} attempt(s) preserved",
@@ -174,6 +181,7 @@ def decide(rec: AtRiskRecord, failure_class: FailureClass, now: datetime) -> Dec
     # 3. The mandate itself is dead, whatever the error text implied.
     if rec.mandate_status is not MandateStatus.ACTIVE:
         return d(
+            3,
             Action.STOP_TERMINAL,
             f"stopped: mandate is {rec.mandate_status.value} despite a "
             f"{failure_class.value} failure — retry would be spent on a dead mandate",
@@ -183,6 +191,7 @@ def decide(rec: AtRiskRecord, failure_class: FailureClass, now: datetime) -> Dec
     # 4. Nobody could classify it. Do not guess with someone's money.
     if failure_class is FailureClass.UNKNOWN:
         return d(
+            4,
             Action.HUMAN_REVIEW,
             "human review: failure could not be classified by dict or model "
             "— refusing to spend an attempt on an unknown cause",
@@ -191,6 +200,7 @@ def decide(rec: AtRiskRecord, failure_class: FailureClass, now: datetime) -> Dec
     # 5. The debit is larger than the mandate permits. It cannot succeed.
     if rec.exceeds_mandate_cap:
         return d(
+            5,
             Action.HUMAN_REVIEW,
             f"human review: amount ₹{rec.amount_paise / 100:,.2f} exceeds the mandate "
             f"cap ₹{rec.mandate_max_amount_paise / 100:,.2f} — needs a fresh mandate",
@@ -199,6 +209,7 @@ def decide(rec: AtRiskRecord, failure_class: FailureClass, now: datetime) -> Dec
     # 6. Above the RBI standard cap, automation does not act alone.
     if rec.needs_human_approval:
         return d(
+            6,
             Action.HUMAN_REVIEW,
             f"human review: amount ₹{rec.amount_paise / 100:,.2f} exceeds the RBI "
             f"e-mandate standard cap — outside the unattended envelope",
@@ -211,6 +222,7 @@ def decide(rec: AtRiskRecord, failure_class: FailureClass, now: datetime) -> Dec
     at, p = best_retry_time(rec, failure_class, now)
     if at is None:
         return d(
+            7,
             Action.STOP_TERMINAL,
             f"stopped: mandate expires {rec.mandate_valid_until:%Y-%m-%d} before a "
             f"debit could lawfully be presented (pre-debit notice floor is "
@@ -222,6 +234,7 @@ def decide(rec: AtRiskRecord, failure_class: FailureClass, now: datetime) -> Dec
     # 8. Eligible. Spend the attempt at its best moment.
     waited = (at - now).total_seconds() / 3600.0
     return d(
+        8,
         Action.RETRY_SCHEDULED,
         f"retry scheduled +{waited:.0f}h for {failure_class.value} "
         f"(assumed p={p:.2f}, attempt {rec.attempts_used + 1}/"

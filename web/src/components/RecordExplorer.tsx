@@ -17,8 +17,11 @@ const ACTIONS: Action[] = [
   "HUMAN_REVIEW",
 ];
 
-/** The ordered rule list from decide.py. Shown so a reader can see not just
- *  which rule fired, but which ones were checked and passed before it. */
+/** Labels for the ordered rule list in decide.py. These are display strings
+ *  only — WHICH rule fired is decided by the engine and arrives as
+ *  `rule_fired` on every record. Reimplementing the ordering here would put a
+ *  second copy of a money decision in the viewer, free to drift out of step
+ *  with the engine without anything failing. */
 const RULES = [
   { n: 1, test: "Retry budget exhausted", action: "STOP_EXHAUSTED" },
   { n: 2, test: "Terminal failure class", action: "STOP_TERMINAL" },
@@ -29,23 +32,6 @@ const RULES = [
   { n: 7, test: "Mandate expires before notice elapses", action: "STOP_TERMINAL" },
   { n: 8, test: "Eligible — schedule at the best moment", action: "RETRY_SCHEDULED" },
 ];
-
-function firedRule(r: BatchRecord): number {
-  if (r.attempts_remaining <= 0) return 1;
-  const terminalClasses = [
-    "MANDATE_REVOKED",
-    "MANDATE_EXPIRED",
-    "MANDATE_PAUSED",
-    "LIMIT_EXCEEDED",
-  ];
-  if (terminalClasses.includes(r.failure_class)) return 2;
-  if (r.mandate_status !== "active") return 3;
-  if (r.failure_class === "UNKNOWN") return 4;
-  if (r.exceeds_mandate_cap) return 5;
-  if (r.needs_human_approval) return 6;
-  if (r.action === "STOP_TERMINAL") return 7;
-  return 8;
-}
 
 export default function RecordExplorer({ records }: { records: BatchRecord[] }) {
   const [filter, setFilter] = useState<Action | "ALL">("ALL");
@@ -139,7 +125,8 @@ function Row({
   onToggle: () => void;
 }) {
   const tone = TONE_HEX[ACTION_TONE[r.action]];
-  const fired = firedRule(r);
+  // Reported by the engine (decide.py sets rule_fired), never recomputed here.
+  const fired = r.rule_fired;
   const budget = r.attempts_used + r.attempts_remaining;
 
   return (

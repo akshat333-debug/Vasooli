@@ -233,3 +233,63 @@ def test_fuse_trip_reaches_the_caller_instead_of_being_swallowed(monkeypatch):
 
     with pytest.raises(FuseTripped):
         dg._ask_llm(Tripping(), _live_record())
+
+
+# --- BUG 12: the viewer reimplemented the engine's rule ordering --------------
+
+def test_every_decision_reports_which_rule_fired():
+    # The web viewer used to recompute the stopping-rule order in TypeScript to
+    # show a decision trace. A second copy of a money decision, in a language
+    # with no tests against this file, is free to drift silently. The engine now
+    # reports it and the viewer only renders it.
+    batch = generate_batch(100, seed=42)
+    from vasooli.diagnose import diagnose_batch
+    diagnoses, _ = diagnose_batch(batch, use_llm=False)
+    for rec, diag in zip(batch, diagnoses):
+        d = decide(rec, diag.failure_class, BATCH_NOW)
+        assert 1 <= d.rule_fired <= 8, f"{rec.subscription_id} reported rule {d.rule_fired}"
+
+
+def test_rule_fired_matches_the_action_it_implies():
+    rule_action = {
+        1: Action.STOP_EXHAUSTED, 2: Action.STOP_TERMINAL, 3: Action.STOP_TERMINAL,
+        4: Action.HUMAN_REVIEW, 5: Action.HUMAN_REVIEW, 6: Action.HUMAN_REVIEW,
+        7: Action.STOP_TERMINAL, 8: Action.RETRY_SCHEDULED,
+    }
+    batch = generate_batch(100, seed=42)
+    from vasooli.diagnose import diagnose_batch
+    diagnoses, _ = diagnose_batch(batch, use_llm=False)
+    for rec, diag in zip(batch, diagnoses):
+        d = decide(rec, diag.failure_class, BATCH_NOW)
+        assert rule_action[d.rule_fired] is d.action, (
+            f"{rec.subscription_id}: rule {d.rule_fired} implies "
+            f"{rule_action[d.rule_fired]} but action was {d.action}"
+        )
+
+
+def test_export_carries_rule_fired_for_every_record():
+    import tempfile
+
+    from vasooli.export import build_payload
+    p = build_payload(20, seed=42, use_llm=False, db_path=tempfile.mktemp(suffix=".db"))
+    assert all(1 <= r["rule_fired"] <= 8 for r in p["records"])
+
+
+# --- BUG 13: the money breaker accepted a negative debit ----------------------
+
+@pytest.mark.parametrize("amount", [-1, -50000, 0])
+def test_breaker_refuses_non_positive_amounts(amount):
+    # A negative debit would DECREASE the batch's attempted total, quietly
+    # raising the ceiling for every action after it.
+    from vasooli.policy import RecoveryFuse, RecoveryTripped
+    f = RecoveryFuse()
+    with pytest.raises(RecoveryTripped, match="invalid_amount"):
+        f.check(amount)
+
+
+def test_breaker_still_accepts_a_normal_debit():
+    from vasooli.policy import RecoveryFuse
+    f = RecoveryFuse()
+    f.check(49900)
+    f.record(amount_paise=49900, recovered=True)
+    assert f.state.value_recovered_paise == 49900

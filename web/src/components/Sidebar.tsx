@@ -12,7 +12,7 @@ const NAV = [
 ];
 
 function Glyph({ name, active }: { name: string; active: boolean }) {
-  const c = active ? "#f2efe7" : "#8b857a";
+  const c = active ? "#f2efe7" : "#a49e93";
   const common = { stroke: c, strokeWidth: 1.6, fill: "none" as const };
   switch (name) {
     case "Batch":
@@ -127,7 +127,7 @@ export default function Sidebar() {
                   >
                     {n.label}
                   </span>
-                  <span className="mt-0.5 block text-[11px] leading-tight text-paper/35">
+                  <span className="mt-0.5 block text-[11px] leading-tight text-paper/55">
                     {n.hint}
                   </span>
                 </span>
@@ -138,16 +138,16 @@ export default function Sidebar() {
 
         <div className="mt-auto space-y-3 px-2">
           <div className="rounded-lg border border-white/10 px-3 py-2.5">
-            <p className="font-mono text-[10px] tracking-widest text-paper/40 uppercase">
+            <p className="font-mono text-[10px] tracking-widest text-paper/55 uppercase">
               Data
             </p>
-            <p className="mt-1 text-[12px] leading-snug text-paper/60">
+            <p className="mt-1 text-[12px] leading-snug text-paper/70">
               Synthetic batch, seed 42. Outcomes are modelled, not measured.
             </p>
           </div>
           <a
             href="https://github.com/akshat333-debug/Vasooli"
-            className="block text-[12px] text-paper/40 transition-colors hover:text-paper/70"
+            className="block text-[12px] text-paper/60 transition-colors hover:text-paper"
           >
             github.com/akshat333-debug/Vasooli ↗
           </a>
