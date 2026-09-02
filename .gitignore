@@ -10,3 +10,8 @@ node_modules/
 *secret*
 .DS_Store
 .pytest_cache/
+web/node_modules/
+web/.next/
+web/out/
+web/tsconfig.tsbuildinfo
+web/next-env.d.ts

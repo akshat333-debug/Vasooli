@@ -215,13 +215,41 @@ The through-line across all ten: nearly every one was something that *looked* li
 
 ---
 
-## What this deliberately does not have
+## The interface
 
-No dashboard, no web service, no queue.
+```bash
+uv run vasooli export          # engine emits the batch as JSON
+cd web && npm install && npm run dev
+```
 
-The graded substance of a recovery system is the measurement and the audit trail, and both live in the engine. A UI over this would have been surface area, not evidence — it would not have changed a single number in the report, and every hour spent on it is an hour not spent on the stopping rules or on chasing down why the baseline appeared to win.
+Next.js 15, TypeScript, Tailwind v4. Static-exportable, so the built site can be opened without a server and can never drift from the batch it was built from.
 
-The audit trail is queryable SQLite and the report is a text file. Both are legible without a frontend, and `verify-ledger` proves the chain independently of anything that renders it.
+**The engine stays authoritative.** The interface computes nothing. `vasooli export` runs a real batch, reads the real hash-chained ledger, and serialises exactly what the engine decided; the web app renders that and nothing else. For a system whose claim is that every money action is explainable, a UI that could derive a number the engine never produced would mean the audit trail was no longer the whole story.
+
+Four views:
+
+| View | What it is for |
+|---|---|
+| **Batch** | The attempt ledger, the compliance finding, the full exception list |
+| **Records** | All 100 decisions, filterable, each expanding to the rule that fired |
+| **Audit trail** | The 434 hash-chained rows with chain verification |
+| **Method** | What is real, what is simulated, and every defect found |
+
+The interface reflects whichever run produced its `batch.json`, including that run's failures. The committed export was generated while the LLM gateway was unreachable, so the Method view reports the AI stage as degraded and the exception list shows 8 `MANDATE_REVOKED` / 4 unclassified rather than the 9 / 3 in `BATCH_REPORT.txt`, which was produced with the model available. That difference is the containment path doing its job — unmapped failures went to a person instead of a guess — and it is shown rather than papered over. `uv run vasooli export` re-syncs the two.
+
+### Why it does not look like a finance dashboard
+
+The obvious reference for this product is a payments dashboard — dark rail, warm canvas, soft accent cards. That craft is worth taking and it is taken here. Its *framing* is not.
+
+A typical dashboard is built to make numbers look good: a green badge, a rising sparkline, a celebratory total. This project's entire thesis is that the flattering number is the dishonest one — 64 of 100 records were not recovered, and the system that appears to win does so by breaking a rule. A UI that celebrated ₹71,864 with an up-arrow would contradict the README two clicks away.
+
+So the visual language is inverted where it matters:
+
+- The hero is the **attempt budget**, not a revenue total. The signature view draws all 300 retries the batch was allowed to spend, one cell each, nothing aggregated away — the argument is visible before a single number is read.
+- The slot a dashboard reserves for an upsell holds **the compliance finding** instead.
+- Colour is semantic and fixed: sage recovered, periwinkle refused, mustard escalated to a person. **Refusal is the product working**, so it is not styled as a loss.
+- Clay red appears **exactly once in the entire application**, on the baseline's single non-compliant debit. Scarcity is what makes it read as an alarm.
+- Every verdict string is set in monospace at readable size. These are machine output and should look like it, not be styled into prose.
 
 ---
 
@@ -243,6 +271,7 @@ uv run vasooli run
 | `vasooli run` | Both arms + the compliance-adjusted report |
 | `vasooli demo-trip` | Show the batch breaker halting a run mid-flight |
 | `vasooli live` | Probe the real Razorpay test API and create test Orders |
+| `vasooli export` | Emit the batch as JSON for the interface |
 | `vasooli verify-ledger` | Recompute the audit hash chain |
 
 ```bash
@@ -266,9 +295,17 @@ vasooli/
 ├── ledger.py             hash-chained tamper-evident audit trail
 ├── report.py             compliance-adjusted report + exception list
 ├── razorpay_adapter.py   test-mode only; capability-probed
+├── export.py            serialises a real run for the interface
 └── sim/
     ├── model.py          the assumptions, as named constants
     └── seed.py           seeded batch with three hazards built in
+
+web/                      Next.js 15 + Tailwind v4, static-exportable
+├── data/batch.json       written by `vasooli export`; the only data source
+└── src/
+    ├── app/              batch · records · ledger · method
+    ├── components/       AttemptLedger is the signature view
+    └── lib/data.ts       types mirroring export.py; computes nothing
 ```
 
 Prior work this builds on: [RunFuse](https://github.com/akshat333-debug/RunFuse) (bounded execution, imported here), [QuantProto](https://github.com/akshat333-debug/QuantProto) (hash-chained ledger; fail loudly rather than silently substitute), [AutoWatch](https://github.com/akshat333-debug/AutoWatch) (rules-first detection, model second).

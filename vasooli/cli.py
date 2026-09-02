@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 
 from .diagnose import diagnose_batch
 from .execute import run_batch
+from .export import write_payload
 from .ledger import Ledger
 from .policy import RecoveryPolicy
 from .razorpay_adapter import run_live_probe
@@ -123,6 +124,19 @@ def _cmd_live(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_export(args: argparse.Namespace) -> int:
+    """Emit a full batch run as JSON for the web interface."""
+    import os
+
+    if os.path.exists(args.db):
+        os.remove(args.db)
+    p = write_payload(args.out, n=args.n, seed=args.seed,
+                      use_llm=not args.no_llm, db_path=args.db)
+    size = p.stat().st_size
+    print(f"wrote {p} ({size / 1024:.0f} KB)")
+    return 0
+
+
 def _cmd_verify_ledger(args: argparse.Namespace) -> int:
     L = Ledger(args.db)
     r = L.verify()
@@ -172,6 +186,14 @@ def main(argv: list[str] | None = None) -> int:
     lv.add_argument("--limit", type=int, default=3)
     lv.add_argument("--db", default="vasooli.db")
     lv.set_defaults(fn=_cmd_live)
+
+    e = sub.add_parser("export", help="emit a batch run as JSON for the web UI")
+    e.add_argument("-n", type=int, default=100)
+    e.add_argument("--seed", type=int, default=42)
+    e.add_argument("--no-llm", action="store_true")
+    e.add_argument("--db", default="vasooli-web.db")
+    e.add_argument("--out", default="web/data/batch.json")
+    e.set_defaults(fn=_cmd_export)
 
     v = sub.add_parser("verify-ledger", help="recompute the audit hash chain")
     v.add_argument("--db", default="vasooli.db")

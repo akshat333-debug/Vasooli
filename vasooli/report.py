@@ -147,9 +147,15 @@ def render(
         add("AI USAGE")
         add("-" * 78)
         checked = llm_stats["agree"] + llm_stats["disagree"]
+        errs = llm_stats.get("llm_errors", 0)
         add(f"  LLM calls made               : {llm_stats['llm_calls']}")
-        add(f"  Agreement with the dict      : {llm_stats['agree']}/{checked}"
-            f" (sampled head, scoring only)")
+        if errs:
+            add(f"  Calls that never reached it  : {errs}  <-- model unreachable")
+        if checked:
+            add(f"  Agreement with the dict      : {llm_stats['agree']}/{checked}"
+                f" (sampled head, scoring only)")
+        else:
+            add("  Agreement with the dict      : not measured (no call succeeded)")
         add(f"  Records classified by the LLM: {llm_stats['llm_rescued']} (unmapped tail)")
         add(f"  Left UNKNOWN -> human review : {llm_stats['unknown']}")
         add("  No language model participated in any decision to move money.")

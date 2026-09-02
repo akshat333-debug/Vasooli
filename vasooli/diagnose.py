@@ -36,7 +36,7 @@ import random
 from typing import Any
 
 from openai import OpenAI
-from runfuse import Fuse, FusePolicy
+from runfuse import Fuse, FusePolicy, FuseTripped
 
 from .models import AtRiskRecord, Diagnosis
 from .taxonomy import FailureClass, classify_by_code
@@ -100,13 +100,25 @@ def _client() -> OpenAI:
     )
 
 
-def _ask_llm(client: OpenAI, rec: AtRiskRecord) -> FailureClass:
-    """One classification call. Any malformed answer or fault degrades to UNKNOWN.
+def _ask_llm(client: OpenAI, rec: AtRiskRecord) -> tuple[FailureClass, bool]:
+    """One classification call. Returns (class, reached_the_model).
 
-    Every failure mode here — a network error, a gateway 500, a RunFuse trip, a
-    malformed response — resolves to UNKNOWN, which routes the record to a human.
-    Nothing in this function may raise into the batch: a classifier that cannot
-    answer is a record a person looks at, not a run that dies.
+    A network error, a gateway 500, or a malformed response all resolve to
+    UNKNOWN, which routes the record to a human. Nothing here may raise into the
+    batch: a classifier that cannot answer is a record a person looks at, not a
+    run that dies.
+
+    The second element of the tuple exists because "the model answered UNKNOWN"
+    and "the model was unreachable" are different facts, and collapsing them
+    into one made the report lie. With the gateway down, the run counted 20
+    disagreements — as if a working model had given 20 different answers —
+    rather than 24 failed calls.
+
+    FuseTripped is deliberately NOT caught. It is not a call failure; it is the
+    guardrail deciding the stage should stop. Swallowing it here turned every
+    subsequent record into a silent UNKNOWN and left the trip out of the report
+    entirely. It belongs to the caller, which records it and degrades the whole
+    remaining batch to the dictionary in one visible step.
     """
     user = (
         f"Bank: {rec.bank}\n"
@@ -126,12 +138,15 @@ def _ask_llm(client: OpenAI, rec: AtRiskRecord) -> FailureClass:
             temperature=0,
         )
         raw = (resp.choices[0].message.content or "").strip().upper()
+    except FuseTripped:
+        # The guardrail speaking, not a failed call. Belongs to the caller.
+        raise
     except Exception:  # noqa: BLE001 - containment boundary, see docstring
         # Deliberately broad. This is a containment boundary, not error handling:
         # anything at all that goes wrong in the AI stage becomes "ask a human"
         # rather than an exception crossing into the money stage.
-        return FailureClass.UNKNOWN
-    return FailureClass(raw) if raw in _ALLOWED else FailureClass.UNKNOWN
+        return FailureClass.UNKNOWN, False
+    return (FailureClass(raw) if raw in _ALLOWED else FailureClass.UNKNOWN), True
 
 
 def diagnose_batch(
@@ -156,6 +171,7 @@ def diagnose_batch(
     """
     stats: dict[str, Any] = {
         "llm_calls": 0, "agree": 0, "disagree": 0, "llm_rescued": 0, "unknown": 0,
+        "llm_errors": 0,
     }
     out: list[Diagnosis] = []
 
@@ -197,22 +213,31 @@ def diagnose_batch(
                     subscription_id=rec.subscription_id, failure_class=deterministic,
                     source="code_map", rationale="code_map authoritative; llm not consulted",
                 )
-            llm = _ask_llm(client, rec)
+            llm, reached = _ask_llm(client, rec)
             stats["llm_calls"] += 1
-            if llm == deterministic:
+            if not reached:
+                # Unreachable is not disagreement. Scoring a model that never
+                # answered would report a false accuracy signal.
+                stats["llm_errors"] += 1
+                note = "llm unreachable"
+            elif llm == deterministic:
                 stats["agree"] += 1
+                note = f"llm agreed ({llm.value})"
             else:
                 stats["disagree"] += 1
+                note = f"llm said {llm.value}"
             return Diagnosis(
                 subscription_id=rec.subscription_id,
                 failure_class=deterministic,
                 source="code_map",
-                rationale=f"code_map authoritative; llm said {llm.value}",
+                rationale=f"code_map authoritative; {note}",
             )
 
         # Tail: the model is load-bearing here.
-        llm = _ask_llm(client, rec)
+        llm, reached = _ask_llm(client, rec)
         stats["llm_calls"] += 1
+        if not reached:
+            stats["llm_errors"] += 1
 
         # The tail: only the free text can settle this.
         if llm is not FailureClass.UNKNOWN:

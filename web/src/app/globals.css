@@ -1,0 +1,161 @@
+@import "tailwindcss";
+
+/*
+  Vasooli design tokens.
+
+  Colour here is not decoration — every accent is bound to one meaning and is
+  used for nothing else. That constraint is the point: this is an interface for
+  a system whose whole claim is that each money action is explainable, so a
+  reader must be able to learn four colours once and then read any screen.
+
+    sage       recovered      money actually came back
+    periwinkle refused        the engine declined to spend an attempt
+    mustard    escalated      handed to a human on purpose
+    clay       breach         a debit outside the compliance envelope
+
+  Clay appears exactly once in the entire application, on the baseline's
+  non-compliant debit. Scarcity is what makes it legible as an alarm.
+*/
+
+@theme {
+  --color-paper: #f2efe7;
+  --color-paper-raised: #faf8f3;
+  --color-paper-sunk: #e8e4d9;
+  --color-ink: #1c1b19;
+  --color-ink-soft: #3a3834;
+  --color-ink-mute: #6f6a60;
+  --color-ink-faint: #9a9488;
+  --color-rule: #ddd8cb;
+
+  --color-sage: #8fae86;
+  --color-sage-soft: #cfdcc9;
+  --color-periwinkle: #8f8fe8;
+  --color-periwinkle-soft: #d3d3f5;
+  --color-mustard: #d9ac43;
+  --color-mustard-soft: #f0deb0;
+  --color-clay: #b5533f;
+  --color-clay-soft: #e8c3ba;
+
+  --font-display: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-instrument), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, monospace;
+}
+
+:root {
+  color-scheme: light;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-feature-settings: "tnum" 1, "cv05" 1;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Numbers must line up in columns. Money is read by comparison. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+.display {
+  font-family: var(--font-display);
+  font-variation-settings: "wdth" 112;
+  letter-spacing: -0.015em;
+}
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-ink-faint);
+}
+
+/* Machine output is set in mono at a readable size, never styled into prose.
+   A verdict string is evidence; it should look like it came from the engine. */
+.verdict {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  color: var(--color-ink-soft);
+}
+
+*:focus-visible {
+  outline: 2px solid var(--color-periwinkle);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+::selection {
+  background: var(--color-periwinkle-soft);
+}
+
+/* Thin, unobtrusive scrollbars inside data panes. */
+.scroll-slim {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-rule) transparent;
+}
+.scroll-slim::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.scroll-slim::-webkit-scrollbar-thumb {
+  background: var(--color-rule);
+  border-radius: 4px;
+}
+.scroll-slim::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@keyframes cell-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.rise {
+  animation: rise 0.5s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* The attempt grid stays legible on a phone by halving its columns rather than
+   shrinking cells below the point where a colour is readable. */
+.attempt-grid {
+  grid-template-columns: repeat(30, minmax(0, 1fr));
+}
+@media (min-width: 640px) {
+  .attempt-grid {
+    grid-template-columns: repeat(60, minmax(0, 1fr));
+  }
+}

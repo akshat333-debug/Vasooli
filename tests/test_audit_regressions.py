@@ -106,7 +106,7 @@ def test_a_runfuse_fault_does_not_kill_the_batch(monkeypatch):
             return cm()
 
     monkeypatch.setattr(dg, "Fuse", ExplodingFuse)
-    monkeypatch.setattr(dg, "_ask_llm", lambda c, r: FailureClass.UNKNOWN)
+    monkeypatch.setattr(dg, "_ask_llm", lambda c, r: (FailureClass.UNKNOWN, True))
     monkeypatch.setenv("VASOOLI_LLM_API_KEY", "x")
 
     batch = generate_batch(20, seed=42)
@@ -126,7 +126,9 @@ def test_llm_call_failure_degrades_to_unknown_not_an_exception(monkeypatch):
                 def create(**kw):
                     raise RuntimeError("gateway exploded")
 
-    assert dg._ask_llm(Boom(), _live_record()) is FailureClass.UNKNOWN
+    fc, reached = dg._ask_llm(Boom(), _live_record())
+    assert fc is FailureClass.UNKNOWN
+    assert reached is False, 'an unreachable model must not be scored as a disagreement'
 
 
 # --- BUG 3: missing credentials crashed instead of degrading ------------------
@@ -184,3 +186,50 @@ def test_complete_run_is_not_flagged_as_truncated(ledger):
     sq = run_batch(batch, arm="sequencer", now=BATCH_NOW, ledger=ledger)
     assert not bl.truncated and not sq.truncated
     assert "NOT A RESULT" not in render(bl, sq, batch, ledger_ok=True, ledger_rows=1)
+
+
+# --- BUG 11: an unreachable model was scored as a disagreement ----------------
+
+def test_unreachable_model_is_counted_separately_from_disagreement(monkeypatch):
+    # With the gateway down, the run reported 20 "disagreements" — as if a
+    # working model had given 20 different answers — instead of failed calls.
+    # An accuracy signal computed from calls that never happened is a lie.
+    monkeypatch.setattr(dg, "_ask_llm", lambda c, r: (FailureClass.UNKNOWN, False))
+    monkeypatch.setenv("VASOOLI_LLM_API_KEY", "x")
+    out, stats = dg.diagnose_batch(generate_batch(40, seed=42), use_llm=True)
+
+    assert stats["llm_errors"] > 0
+    assert stats["disagree"] == 0, "unreachable calls were scored as disagreements"
+    assert stats["agree"] == 0
+    assert len(out) == 40
+
+
+def test_report_does_not_claim_agreement_when_no_call_succeeded(ledger):
+    from vasooli.report import render
+    batch = generate_batch(50, seed=42)
+    bl = run_batch(batch, arm="baseline", now=BATCH_NOW, ledger=ledger)
+    sq = run_batch(batch, arm="sequencer", now=BATCH_NOW, ledger=ledger)
+    stats = {"llm_calls": 24, "agree": 0, "disagree": 0, "llm_rescued": 0,
+             "unknown": 4, "llm_errors": 24}
+    out = render(bl, sq, batch, ledger_ok=True, ledger_rows=1, llm_stats=stats)
+    assert "model unreachable" in out
+    assert "not measured" in out
+
+
+def test_fuse_trip_reaches_the_caller_instead_of_being_swallowed(monkeypatch):
+    # _ask_llm must not absorb FuseTripped. Swallowing it turned every later
+    # record into a silent UNKNOWN and kept the trip out of the report.
+    from runfuse import FuseTripped, Verdict
+
+    verdict = Verdict(severity="hard", fuse="max_steps",
+                      reason="test trip", run_id="t")
+
+    class Tripping:
+        class chat:
+            class completions:
+                @staticmethod
+                def create(**kw):
+                    raise FuseTripped(verdict)
+
+    with pytest.raises(FuseTripped):
+        dg._ask_llm(Tripping(), _live_record())
