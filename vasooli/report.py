@@ -18,6 +18,7 @@ Two rules this module exists to enforce:
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+from typing import Any
 
 from .execute import BatchResult
 from .models import AtRiskRecord
@@ -48,7 +49,7 @@ def render(
     *,
     ledger_ok: bool,
     ledger_rows: int,
-    llm_stats: dict[str, int] | None = None,
+    llm_stats: dict[str, Any] | None = None,
 ) -> str:
     b_in, b_over = compliance_split(baseline, records)
     s_in, s_over = compliance_split(sequencer, records)
@@ -68,6 +69,22 @@ def render(
     add(f"Records at risk : {sequencer.records}")
     add(f"Value at risk   : {_rs(at_risk)}")
     add("")
+
+    if baseline.truncated or sequencer.truncated:
+        add("!" * 78)
+        add("INCOMPLETE RUN - THE NUMBERS BELOW ARE NOT A RESULT")
+        add("!" * 78)
+        for r in (baseline, sequencer):
+            if r.truncated:
+                add(f"  {r.arm}: processed {r.records_processed} of {r.records} records "
+                    f"before the batch breaker stopped it")
+                add(f"    {r.tripped}")
+        add("")
+        add("  Totals are computed over a prefix of the batch while 'value at risk'")
+        add("  counts every record, so the rates below are measured against a")
+        add("  denominator that was never attempted. Raise the breaker ceiling and")
+        add("  re-run before quoting any of this.")
+        add("")
 
     add("-" * 78)
     add("HEADLINE - compliance-adjusted (what automation may lawfully do alone)")
@@ -136,6 +153,17 @@ def render(
         add(f"  Records classified by the LLM: {llm_stats['llm_rescued']} (unmapped tail)")
         add(f"  Left UNKNOWN -> human review : {llm_stats['unknown']}")
         add("  No language model participated in any decision to move money.")
+        if llm_stats.get("degraded"):
+            add("")
+            add("  DEGRADED: the model was unavailable and the run fell back to the")
+            add("  dictionary alone. Unmapped failures went to human review.")
+            add(f"    reason: {llm_stats.get('degraded_reason', 'unspecified')}")
+        if llm_stats.get("fuse_aborted"):
+            add("")
+            add("  DEGRADED: the AI-stage circuit breaker aborted mid-batch. Remaining")
+            add("  records were classified by the dictionary alone. Money decisions")
+            add("  were unaffected - the breaker bounds the AI stage only.")
+            add(f"    reason: {llm_stats.get('fuse_reason', 'unspecified')}")
         add("")
 
     add("-" * 78)

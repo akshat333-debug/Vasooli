@@ -48,7 +48,7 @@ from pydantic import BaseModel
 from .decide import Action, Decision, days_to_replenish, decide, earliest_legal_retry
 from .diagnose import diagnose_batch
 from .ledger import Ledger
-from .models import AtRiskRecord, MandateStatus
+from .models import AtRiskRecord, Diagnosis, MandateStatus
 from .policy import RecoveryFuse, RecoveryPolicy, RecoveryTripped
 from .sim.model import success_probability
 from .taxonomy import FailureClass
@@ -95,6 +95,22 @@ class BatchResult(BaseModel):
     tripped: str | None = None
 
     @property
+    def records_processed(self) -> int:
+        return len(self.outcomes)
+
+    @property
+    def truncated(self) -> bool:
+        """True when the breaker stopped the run before every record was seen.
+
+        A truncated run is not a result. Its totals are computed over a prefix of
+        the batch while `value_at_risk_paise` still counts everything, so any
+        rate derived from it understates recovery against a denominator that was
+        never attempted. The report must say so rather than print a comparison
+        that looks complete.
+        """
+        return self.records_processed < self.records
+
+    @property
     def recovery_rate(self) -> float:
         return (self.value_recovered_paise / self.value_at_risk_paise
                 if self.value_at_risk_paise else 0.0)
@@ -132,6 +148,11 @@ def _attempt(
         return False
     if rec.exceeds_mandate_cap:
         return False
+    if at > rec.mandate_valid_until:
+        # Presented after the mandate's validity date. Rejected on presentation,
+        # whichever arm scheduled it. Added after an audit found the sequencer
+        # scheduling past expiry and the simulator happily paying out on it.
+        return False
 
     p = success_probability(
         fc,
@@ -150,11 +171,25 @@ def run_batch(
     ledger: Ledger,
     policy: RecoveryPolicy | None = None,
     use_llm: bool = False,
+    diagnoses: list[Diagnosis] | None = None,
 ) -> BatchResult:
-    """Run one arm over the batch, writing every decision to the ledger."""
+    """Run one arm over the batch, writing every decision to the ledger.
+
+    `diagnoses` should be supplied by the caller so that both arms reason over
+    the IDENTICAL classification — including anything the LLM resolved on the
+    tail. Re-diagnosing per arm was a real bug: the CLI classified with the
+    model, reported statistics about it, and then each arm silently re-ran the
+    dictionary alone, so a record the model had rescued was still treated as
+    UNKNOWN when the money decision was actually made. The report described work
+    that never reached the decision.
+
+    When omitted, diagnosis is computed here (dictionary-only by default), which
+    keeps the function usable standalone in tests.
+    """
     run_id = uuid.uuid4().hex[:12]
     fuse = RecoveryFuse(policy)
-    diagnoses, _ = diagnose_batch(records, use_llm=use_llm)
+    if diagnoses is None:
+        diagnoses, _ = diagnose_batch(records, use_llm=use_llm)
     by_id = {d.subscription_id: d for d in diagnoses}
 
     outcomes: list[RecordOutcome] = []
@@ -232,16 +267,22 @@ def run_batch(
                 reason = f"recovered on attempt {attempt_index + 1}"
                 break
 
-        if tripped:
-            break
         if not reason:
-            reason = "all available attempts spent without recovery"
+            reason = ("batch breaker tripped before this record finished"
+                      if tripped else "all available attempts spent without recovery")
 
+        # Recorded even when the breaker tripped mid-record. Previously this
+        # append was skipped on a trip, so attempts already spent on that record
+        # were counted in the batch total but belonged to no outcome — the
+        # per-record and batch-level accounting disagreed, silently.
         outcomes.append(RecordOutcome(
             subscription_id=rec.subscription_id, amount_paise=rec.amount_paise,
             failure_class=fc, recovered=recovered, attempts_spent=spent,
             attempts_preserved=rec.attempts_remaining - spent,
             terminal_reason=reason))
+
+        if tripped:
+            break
 
     result = BatchResult(
         run_id=run_id, arm=arm, records=len(records), outcomes=outcomes,
@@ -262,11 +303,19 @@ def run_batch(
 def _sequencer_schedule(
     rec: AtRiskRecord, fc: FailureClass, now: datetime, first: Decision
 ) -> list[datetime]:
-    """Optimal first attempt, then re-scheduled follow-ups if it fails."""
+    """Optimal first attempt, then re-scheduled follow-ups if it fails.
+
+    Follow-ups are truncated at the mandate's validity date for the same reason
+    the first attempt is: a debit presented after expiry is rejected, so a
+    scheduled slot beyond it is an attempt guaranteed to be wasted.
+    """
     out = [first.scheduled_at or now]
-    for k in range(1, rec.attempts_remaining):
+    for _ in range(1, rec.attempts_remaining):
         # A failed attempt means the cause persisted; wait a further cycle.
-        out.append(out[-1] + timedelta(days=7 if fc is FailureClass.INSUFFICIENT_FUNDS else 1))
+        nxt = out[-1] + timedelta(days=7 if fc is FailureClass.INSUFFICIENT_FUNDS else 1)
+        if nxt > rec.mandate_valid_until:
+            break
+        out.append(nxt)
     return out
 
 

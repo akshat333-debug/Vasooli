@@ -37,12 +37,12 @@ EXCEPTION LIST - every record not recovered by the sequencer
 ------------------------------------------------------------------------------
     15    Rs 20,885.00   all available attempts spent without recovery
     13    Rs 21,587.00   stopped: retry budget exhausted (3/3)
-     8    Rs 15,092.00   stopped: MANDATE_REVOKED
+     9    Rs 17,591.00   stopped: MANDATE_REVOKED
      5     Rs 3,495.00   stopped: mandate is revoked despite a INSUFFICIENT_FUNDS failure
      5     Rs 7,395.00   stopped at execution: mandate revoked after the decision was made
      5     Rs 4,195.00   stopped: LIMIT_EXCEEDED
      4     Rs 6,396.00   stopped: MANDATE_EXPIRED
-     4     Rs 3,996.00   human review: failure could not be classified by dict or model
+     3     Rs 1,497.00   human review: failure could not be classified by dict or model
      2    Rs 48,965.47   stopped: MANDATE_PAUSED
      1       Rs 299.00   human review: amount ₹299.00 exceeds the mandate cap ₹209.30
      1    Rs 31,045.08   human review: amount ₹31,045.08 exceeds the RBI e-mandate standard cap
@@ -56,11 +56,11 @@ FAILURE MIX
 ------------------------------------------------------------------------------
   INSUFFICIENT_FUNDS       53 records,  23 recovered
   BANK_DOWNTIME            14 records,  11 recovered
-  MANDATE_REVOKED           9 records,   0 recovered
+  MANDATE_REVOKED          10 records,   0 recovered
   TECHNICAL_ERROR           6 records,   2 recovered
   LIMIT_EXCEEDED            6 records,   0 recovered
   MANDATE_EXPIRED           5 records,   0 recovered
-  UNKNOWN                   4 records,   0 recovered
+  UNKNOWN                   3 records,   0 recovered
   MANDATE_PAUSED            3 records,   0 recovered
 
 ------------------------------------------------------------------------------

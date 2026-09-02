@@ -58,10 +58,15 @@ def _cmd_run(args: argparse.Namespace) -> int:
     batch = generate_batch(args.n, seed=args.seed)
     ledger = Ledger(args.db)
 
-    _, llm_stats = diagnose_batch(batch, use_llm=not args.no_llm)
+    # Diagnose ONCE, then hand the same classifications to both arms. Previously
+    # each arm re-diagnosed internally with the dictionary alone, so the LLM's
+    # work on the unmapped tail was reported but never actually used to decide.
+    diagnoses, llm_stats = diagnose_batch(batch, use_llm=not args.no_llm)
 
-    baseline = run_batch(batch, arm="baseline", now=BATCH_NOW, ledger=ledger)
-    sequencer = run_batch(batch, arm="sequencer", now=BATCH_NOW, ledger=ledger)
+    baseline = run_batch(batch, arm="baseline", now=BATCH_NOW, ledger=ledger,
+                         diagnoses=diagnoses)
+    sequencer = run_batch(batch, arm="sequencer", now=BATCH_NOW, ledger=ledger,
+                          diagnoses=diagnoses)
 
     v = ledger.verify()
     out = render(baseline, sequencer, batch, ledger_ok=v.ok, ledger_rows=v.rows,

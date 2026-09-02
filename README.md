@@ -55,12 +55,12 @@ Strip that one action out and the ranking inverts on both axes. **The naive syst
 |---:|---:|---|
 | 15 | ₹20,885.00 | all available attempts spent without recovery |
 | 13 | ₹21,587.00 | retry budget already exhausted on arrival |
-| 8 | ₹15,092.00 | `MANDATE_REVOKED` |
+| 9 | ₹17,591.00 | `MANDATE_REVOKED` |
 | 5 | ₹3,495.00 | mandate revoked despite an `INSUFFICIENT_FUNDS` failure |
 | 5 | ₹7,395.00 | mandate revoked *after* the decision — caught at execution |
 | 5 | ₹4,195.00 | `LIMIT_EXCEEDED` |
 | 4 | ₹6,396.00 | `MANDATE_EXPIRED` |
-| 4 | ₹3,996.00 | unclassifiable by dict or model → human |
+| 3 | ₹1,497.00 | unclassifiable by dict or model → human |
 | 2 | ₹48,965.47 | `MANDATE_PAUSED` |
 | 2 | ₹73,653.24 | above the RBI standard cap → human |
 | 1 | ₹299.00 | above the mandate's own cap → human |
@@ -112,7 +112,7 @@ Stated plainly, because the track's bar rewards honesty over inflated numbers.
                                ▼
   ┌──────────── DECIDE ───────────────────────────────────────────────┐
   │  ** NO LANGUAGE MODEL RUNS HERE **                                 │
-  │  7 stopping rules, then a deterministic grid search over the       │
+  │  8 stopping rules, then a deterministic grid search over the       │
   │  legal retry window for the moment of highest expected success     │
   └────────────────────────────┬──────────────────────────────────────┘
                                ▼
@@ -164,7 +164,8 @@ Checked in order. Cheapest and most certain refusals first.
 | 4 | Failure unclassified | HUMAN — never auto-act on a guess |
 | 5 | Amount above the mandate cap | HUMAN — guaranteed rejection if attempted |
 | 6 | Amount above the RBI standard cap | HUMAN — outside the unattended envelope |
-| 7 | Otherwise | Schedule the retry at its best moment |
+| 7 | Mandate expires before the notice period elapses | STOP — no lawful window exists |
+| 8 | Otherwise | Schedule the retry at its best moment, bounded by mandate validity |
 
 Plus batch-level ceilings on actions and total value, with a soft warning at 80% before the hard trip, and a legal floor: no debit is scheduled before the RBI pre-debit notice period has elapsed — **applied to both arms**, because comparing a compliant system against a non-compliant one would prove nothing.
 
@@ -190,9 +191,27 @@ Four real failures during the build. None of them were manufactured for this sec
 
 **3. The simulator credited impossible recoveries — and it flattered the baseline.** `_attempt` applied a probability without first checking physical reality, so the baseline was being credited with recovering money from revoked mandates and from debits above the mandate cap. Banks reject both outright. This inflated the arm I was arguing against, which is the only reason it was worth finding: the sequencer's entire advantage is *not attempting* those, so letting them succeed in simulation destroyed the thing being measured. Both constraints now apply to both arms before any probability is considered.
 
-**4. The Razorpay test account couldn't do Subscriptions, then could.** The key initially authenticated for Orders, Payments and Invoices but returned `401` on Subscriptions and Plans — that product wasn't enabled on the account. The wrong responses were to crash on startup or to quietly pretend the calls happened. The adapter probes what the account can actually do rather than hardcoding either answer, writes the result to the ledger, and — while the gap existed — degraded to Orders-only with the degradation printed in the report. Once Subscriptions was enabled mid-build, the same probe picked it up with no code change, and `uv run vasooli live` now creates a real test-mode Plan and Subscription. That surfaced the next honest boundary: the subscription comes back `created`, not `active`, because activation needs the customer to complete mandate consent through checkout — a browser step this adapter refuses to automate on the customer's behalf, for the same reason the decision engine refuses to auto-act above the RBI cap. Both states — capability absent, capability present but requiring a human step — are logged and tested (`tests/test_razorpay_adapter.py`).
+**4. The Razorpay test account could not do Subscriptions, then could.** The key initially authenticated for Orders, Payments and Invoices but returned `401` on Subscriptions and Plans — that product wasn't enabled on the account. The wrong responses were to crash on startup or to quietly pretend the calls happened. The adapter probes what the account can actually do rather than hardcoding either answer, writes the result to the ledger, and — while the gap existed — degraded to Orders-only with the degradation printed in the report. Once Subscriptions was enabled mid-build, the same probe picked it up with no code change, and `uv run vasooli live` now creates a real test-mode Plan and Subscription. That surfaced the next honest boundary: the subscription comes back `created`, not `active`, because activation needs the customer to complete mandate consent through checkout — a browser step this adapter refuses to automate on the customer's behalf, for the same reason the decision engine refuses to auto-act above the RBI cap. Both states — capability absent, capability present but requiring a human step — are logged and tested (`tests/test_razorpay_adapter.py`).
 
-The through-line: three of the four were cases where something *looked* like it was working. That is what the audit trail and the arm comparison are for.
+### Then I audited the whole thing and found six more
+
+The four above were found while building. After the project "worked", I ran a deliberate module-by-module and flow-by-flow audit, specifically asking what happens when each component misbehaves. It found six defects in already-committed code. All six are fixed, each with a regression test in [`tests/test_audit_regressions.py`](tests/test_audit_regressions.py) that fails if the fix is reverted.
+
+**5. The scheduler was doing the exact thing this project exists to prevent.** `best_retry_time` searched a window bounded only by the RBI notice floor — never by the mandate's own expiry date. Given a mandate expiring in 2 days and a replenishment cycle 8 days out, it scheduled the retry 6 days *after the mandate died*, and reported `assumed p=0.62` for a debit the bank would reject outright. The stopping rules caught dead mandates on the way in; the scheduler could still manufacture one on the way out. Now the search window is bounded on both ends, follow-up attempts are truncated at expiry, and a mandate that dies before the notice period elapses is a new terminal stopping rule (#7). The simulator was complicit too — it paid out on post-expiry debits — so that constraint now binds both arms.
+
+**6. A fault in the AI guardrail could kill the money stage.** RunFuse wrapped the whole diagnosis loop in `with fuse.run(...)`. Any trip or internal fault propagated straight out of `diagnose_batch`, through the CLI, and killed the entire batch — including every money decision that never needed a model at all. A guardrail that can take down more than it protects is a worse failure than the one it guards against. Diagnosis now has explicit containment boundaries: any AI-stage fault degrades that record to `UNKNOWN` → human review, the batch continues on the dictionary, and the report prints the degradation.
+
+**7. The model's work never reached the decision.** `vasooli run` diagnosed the batch with Claude, printed statistics about it — *"Records classified by the LLM: 1"* — and then each arm silently **re-diagnosed with the dictionary alone**, discarding the model's output. One record (`sub_SYN0055`) that the model correctly identified as `MANDATE_REVOKED` was still being treated as `UNKNOWN` when the actual money decision was made. The README claimed the model was load-bearing on the tail; in the run path it wasn't. Diagnosis now happens once and is threaded into both arms. That single record is why the exception list above shows 9 `MANDATE_REVOKED` and 3 unclassified, rather than 8 and 4.
+
+**8. A truncated run rendered as a complete one.** When the batch breaker tripped, the run stopped mid-batch — 19 of 100 records processed — and the report printed a full headline comparison with no warning, computing rates against a denominator of all 100. The report now refuses to present a truncated run as a result and says why.
+
+**9. Attempts spent on the record that tripped were orphaned.** The trip broke out before appending that record's outcome, so its attempts counted toward the batch total but belonged to no record. Batch-level and per-record accounting disagreed silently. Now the partial outcome is recorded before the break.
+
+**10. Missing credentials crashed instead of degrading.** No `VASOOLI_LLM_API_KEY` produced a raw `OpenAIError` out of the OpenAI SDK constructor rather than falling back to dictionary-only classification — in a project whose stated philosophy is *degrade to asking a human, never guess*.
+
+**On RunFuse specifically:** I tested it in isolation against this gateway before assuming it was at fault. `max_steps` trips precisely at the boundary, step counting is exact, and the `$0` cost accounting is a pricing-table gap on an unrecognised model name, not a logic error. **RunFuse was correct; Vasooli's containment of it was not.** That distinction is the whole lesson — a dependency being right does not make your use of it safe.
+
+The through-line across all ten: nearly every one was something that *looked* like it was working. Three were guardrails that were themselves the hazard. That is what the audit trail, the arm comparison, and a deliberate adversarial audit are for — and it is why "it runs and the tests pass" was not where I stopped.
 
 ---
 
@@ -230,7 +249,7 @@ uv run vasooli run
 uv run pytest
 ```
 
-78 tests. Hermetic — no network, no API keys, no gateway required.
+90 tests. Hermetic — no network, no API keys, no gateway required.
 
 ---
 
@@ -241,7 +260,7 @@ vasooli/
 ├── taxonomy.py           8 failure classes; explicit UNKNOWN
 ├── models.py             record schema; paise only; RBI caps encoded
 ├── diagnose.py           dict-authoritative + Haiku on the tail
-├── decide.py             7 stopping rules + deterministic scorer, no LLM
+├── decide.py             8 stopping rules + deterministic scorer, no LLM
 ├── policy.py             RecoveryFuse — the money-side breaker
 ├── execute.py            both arms, shared random draw, pre-flight re-check
 ├── ledger.py             hash-chained tamper-evident audit trail

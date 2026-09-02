@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import os
 import random
+from typing import Any
 
 from openai import OpenAI
 from runfuse import Fuse, FusePolicy
@@ -100,7 +101,13 @@ def _client() -> OpenAI:
 
 
 def _ask_llm(client: OpenAI, rec: AtRiskRecord) -> FailureClass:
-    """One classification call. Any malformed answer degrades to UNKNOWN."""
+    """One classification call. Any malformed answer or fault degrades to UNKNOWN.
+
+    Every failure mode here — a network error, a gateway 500, a RunFuse trip, a
+    malformed response — resolves to UNKNOWN, which routes the record to a human.
+    Nothing in this function may raise into the batch: a classifier that cannot
+    answer is a record a person looks at, not a run that dies.
+    """
     user = (
         f"Bank: {rec.bank}\n"
         f"Method: {rec.method.value}\n"
@@ -108,16 +115,22 @@ def _ask_llm(client: OpenAI, rec: AtRiskRecord) -> FailureClass:
         f"Gateway reason: {rec.error_reason}\n"
         f"Description from the bank: {rec.error_description}"
     )
-    resp = client.chat.completions.create(
-        model=os.environ.get("VASOOLI_LLM_MODEL", "kr/claude-haiku-4.5"),
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user},
-        ],
-        max_tokens=12,
-        temperature=0,
-    )
-    raw = (resp.choices[0].message.content or "").strip().upper()
+    try:
+        resp = client.chat.completions.create(
+            model=os.environ.get("VASOOLI_LLM_MODEL", "kr/claude-haiku-4.5"),
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user},
+            ],
+            max_tokens=12,
+            temperature=0,
+        )
+        raw = (resp.choices[0].message.content or "").strip().upper()
+    except Exception:  # noqa: BLE001 - containment boundary, see docstring
+        # Deliberately broad. This is a containment boundary, not error handling:
+        # anything at all that goes wrong in the AI stage becomes "ask a human"
+        # rather than an exception crossing into the money stage.
+        return FailureClass.UNKNOWN
     return FailureClass(raw) if raw in _ALLOWED else FailureClass.UNKNOWN
 
 
@@ -127,7 +140,7 @@ def diagnose_batch(
     use_llm: bool = True,
     head_sample: int = 20,
     sample_seed: int = 42,
-) -> tuple[list[Diagnosis], dict[str, int]]:
+) -> tuple[list[Diagnosis], dict[str, Any]]:
     """Diagnose a batch. Returns (diagnoses, agreement stats).
 
     Resolution order, and the reason for it:
@@ -141,13 +154,25 @@ def diagnose_batch(
     The LLM is called on every tail record (it is load-bearing there) and on a
     seeded sample of `head_sample` mapped records (scoring only).
     """
-    stats = {"llm_calls": 0, "agree": 0, "disagree": 0, "llm_rescued": 0, "unknown": 0}
+    stats: dict[str, Any] = {
+        "llm_calls": 0, "agree": 0, "disagree": 0, "llm_rescued": 0, "unknown": 0,
+    }
     out: list[Diagnosis] = []
 
-    client = _client() if use_llm else None
-    fuse = Fuse(_policy()) if use_llm else None
-    if fuse and client:
-        client = fuse.wrap(client)
+    # Building the client or the fuse can fail — missing credentials, a bad base
+    # URL, a RunFuse version whose wrap() signature moved. None of that is a
+    # reason to lose the batch: the dict still classifies the head, and the tail
+    # becomes human review. Degrade, record why, continue.
+    client, fuse = None, None
+    if use_llm:
+        try:
+            client = _client()
+            fuse = Fuse(_policy())
+            client = fuse.wrap(client)
+        except Exception as e:  # noqa: BLE001 - containment boundary, see above
+            stats["degraded"] = 1
+            stats["degraded_reason"] = str(e)[:200]
+            client, fuse = None, None
 
     # Seeded sample of mapped records to score the model against the dict.
     mapped = [r.subscription_id for r in records
@@ -204,8 +229,23 @@ def diagnose_batch(
         )
 
     if fuse:
-        with fuse.run("diagnose-batch"):
-            out = [_run(r) for r in records]
+        try:
+            with fuse.run("diagnose-batch"):
+                out = [_run(r) for r in records]
+        except Exception as e:  # noqa: BLE001 - containment boundary
+            # A RunFuse trip or internal fault must not destroy the batch. The
+            # guardrail exists to bound the AI stage, not to be able to kill the
+            # money stage — a limit that can take down more than it protects is
+            # a worse failure than the one it was guarding against.
+            #
+            # Records already classified are kept. The remainder fall back to the
+            # dictionary, which needs no model, and anything the dictionary
+            # cannot name becomes human review.
+            stats["fuse_aborted"] = 1
+            stats["fuse_reason"] = str(e)[:200]
+            done = {d.subscription_id for d in out}
+            client = None  # force the dict-only path in _run
+            out = out + [_run(r) for r in records if r.subscription_id not in done]
     else:
         out = [_run(r) for r in records]
 

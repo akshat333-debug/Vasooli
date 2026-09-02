@@ -22,11 +22,20 @@ refusals come first, so no work is done on a record that was never eligible.
   4. Unclassified failure          -> HUMAN. Never auto-act on a guess.
   5. Amount over the mandate cap   -> HUMAN. Guaranteed to fail if attempted.
   6. Amount over the RBI cap       -> HUMAN. Automation does not act alone here.
-  7. Otherwise                     -> schedule the retry at its best moment.
+  7. Mandate expires before the
+     notice period elapses         -> STOP. No lawful window exists.
+  8. Otherwise                     -> schedule the retry at its best moment,
+                                      bounded by the mandate's validity date.
 
 Rules 1-3 exist because the retry budget is only three attempts deep. Spending
 one on a record that could never have succeeded is the most expensive mistake
 available to this system, and it is invisible unless you look for it.
+
+Rule 7 was added after an audit found the scheduler doing exactly that: it
+placed a retry six days past the mandate's expiry and reported a confident
+p=0.62 for a debit the bank would have rejected outright. The stopping rules
+guarded against dead mandates on the way in, but the scheduler could still
+create one on the way out.
 """
 
 from __future__ import annotations
@@ -98,20 +107,34 @@ def best_retry_time(
     *,
     horizon_days: int = 14,
     step_hours: int = 6,
-) -> tuple[datetime, float]:
+) -> tuple[datetime | None, float]:
     """Search the legal window for the moment with the highest assumed success.
 
     A plain grid search. It is deliberately boring: exhaustive over a small
     bounded grid, fully deterministic, and trivial to explain to someone who
     needs to trust the debit. Ties resolve to the earliest moment, because
     recovering the same rupee sooner is strictly better for the merchant.
+
+    The window is bounded on BOTH ends. The lower bound is the RBI pre-debit
+    notice floor. The upper bound is the mandate's own validity date, because a
+    debit presented after the mandate expires is rejected — scheduling into that
+    region would be the exact mistake this project exists to prevent, committed
+    by the component that is supposed to prevent it.
+
+    Returns (None, 0.0) when the legal window is empty, i.e. the mandate expires
+    before a debit could lawfully be presented at all.
     """
     start = earliest_legal_retry(rec, now)
+    if start > rec.mandate_valid_until:
+        return None, 0.0
+
     attempt_index = rec.attempts_used
 
     best_at, best_p = start, -1.0
     for h in range(0, horizon_days * 24 + 1, step_hours):
         at = start + timedelta(hours=h)
+        if at > rec.mandate_valid_until:
+            break
         p = success_probability(
             failure_class,
             attempt_index,
@@ -181,8 +204,22 @@ def decide(rec: AtRiskRecord, failure_class: FailureClass, now: datetime) -> Dec
             f"e-mandate standard cap — outside the unattended envelope",
         )
 
-    # 7. Eligible. Spend the attempt at its best moment.
+    # 7. The mandate expires before a debit could lawfully be presented.
+    #    The RBI notice floor and the mandate's validity date can leave no window
+    #    at all, and scheduling into that gap would spend an attempt on a debit
+    #    the bank will reject — the precise mistake this engine exists to avoid.
     at, p = best_retry_time(rec, failure_class, now)
+    if at is None:
+        return d(
+            Action.STOP_TERMINAL,
+            f"stopped: mandate expires {rec.mandate_valid_until:%Y-%m-%d} before a "
+            f"debit could lawfully be presented (pre-debit notice floor is "
+            f"{earliest_legal_retry(rec, now):%Y-%m-%d}) — "
+            f"{rec.attempts_remaining} attempt(s) preserved",
+            wants_nudge=True,
+        )
+
+    # 8. Eligible. Spend the attempt at its best moment.
     waited = (at - now).total_seconds() / 3600.0
     return d(
         Action.RETRY_SCHEDULED,

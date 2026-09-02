@@ -49,7 +49,7 @@ rm -f vasooli.db && uv run vasooli seed && uv run vasooli run && uv run vasooli 
 
 **`uv run vasooli demo-trip`** — breaker halts a run.
 
-**`uv run vasooli verify-ledger`** — chain intact, 434 rows. Then tamper one row and re-run to show it locating the break.
+**`uv run vasooli verify-ledger`** — chain intact (row count printed live). Then tamper one row and re-run to show it locating the break.
 
 ## 2:05–3:10 — Architecture and the AI choices
 
@@ -83,7 +83,7 @@ rm -f vasooli.db && uv run vasooli seed && uv run vasooli run && uv run vasooli 
 
 > Everything measured here is synthetic and the README says exactly which parts are assumption and which are real Razorpay test-mode calls. The absolute rupee figure isn't a production claim. The comparison is, because both arms face identical records and identical random draws — if my thesis were wrong, the sequencer would lose on the same draws.
 >
-> 78 tests, hermetic. Every decision hash-chained.
+> 90 tests, hermetic. Every decision hash-chained.
 >
 > Retries are a budget of three. Vasooli spends them on the failures that can actually be recovered — and refuses, loudly and on the record, the ones that can't.
 
