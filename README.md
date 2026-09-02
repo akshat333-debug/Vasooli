@@ -196,6 +196,16 @@ The through-line: three of the four were cases where something *looked* like it 
 
 ---
 
+## What this deliberately does not have
+
+No dashboard, no web service, no queue.
+
+The graded substance of a recovery system is the measurement and the audit trail, and both live in the engine. A UI over this would have been surface area, not evidence — it would not have changed a single number in the report, and every hour spent on it is an hour not spent on the stopping rules or on chasing down why the baseline appeared to win.
+
+The audit trail is queryable SQLite and the report is a text file. Both are legible without a frontend, and `verify-ledger` proves the chain independently of anything that renders it.
+
+---
+
 ## Run it
 
 ```bash
