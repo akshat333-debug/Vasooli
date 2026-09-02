@@ -80,7 +80,7 @@ Stated plainly, because the track's bar rewards honesty over inflated numbers.
 - Every recovery outcome. Success probabilities are **assumptions**, documented as named constants in [`vasooli/sim/model.py`](vasooli/sim/model.py). They are not measured, not fitted, and not derived from Razorpay or any bank's data. No public dataset of Indian mandate-retry outcomes exists, and this project did not use one of unclear provenance instead.
 
 **Real:**
-- Live Razorpay **test-mode** API calls. `uv run vasooli live` probes the account's actual capabilities and creates real test-mode Orders, logged to the audit trail with their order IDs.
+- Live Razorpay **test-mode** API calls. `uv run vasooli live` probes the account's actual capabilities and creates a real test-mode Plan, Subscription, and Orders, logged to the audit trail with their IDs.
 - The failure taxonomy, every stopping rule, the circuit breaker, the audit chain, and the arm comparison logic. All of it runs; none of it is mocked in the measurement path.
 - Claude Haiku classification of free-text bank error descriptions.
 
@@ -88,7 +88,7 @@ Stated plainly, because the track's bar rewards honesty over inflated numbers.
 - The **absolute rupee figure is not a claim about production performance.** It is the output of the assumptions above.
 - The **comparison between arms is meaningful**, because both arms face identical records and identical seeded random draws. The sequencer cannot win by being handed easier records — only by choosing better moments and by declining attempts that were never going to land. If the thesis were wrong, the sequencer would lose on the same draws.
 
-**A capability gap, not papered over:** the Razorpay test account authenticates for Orders, Payments and Invoices but returns `401` on Subscriptions and Plans — that product is not enabled on it. The adapter probes for this rather than assuming, records the gap in the ledger, and degrades to the simulator with the degradation printed in the report. See [What broke](#what-broke).
+**Live Razorpay Subscriptions, and where that stops being automated:** `uv run vasooli live` creates a real test-mode Plan and Subscription (`vasooli/razorpay_adapter.py::create_test_subscription`) — not mocked, verifiable in the Razorpay test dashboard. That subscription is created in `created` status, not `active`: Razorpay only activates a subscription once the customer completes mandate authentication through checkout, a browser-driven consent step. This adapter deliberately does not automate that step — a machine completing consent on a human's behalf is exactly the class of unattended action this project's own stopping rules refuse elsewhere. Vasooli's job starts after a subscription is active and failing, not through onboarding it. The account initially returned `401` on Subscriptions and Plans (not enabled); the adapter probes capability live rather than assuming either state, so the pre-enablement degradation path — recording the gap and falling back to Orders — is still exercised and tested. See [What broke](#what-broke).
 
 ---
 
@@ -190,7 +190,7 @@ Four real failures during the build. None of them were manufactured for this sec
 
 **3. The simulator credited impossible recoveries — and it flattered the baseline.** `_attempt` applied a probability without first checking physical reality, so the baseline was being credited with recovering money from revoked mandates and from debits above the mandate cap. Banks reject both outright. This inflated the arm I was arguing against, which is the only reason it was worth finding: the sequencer's entire advantage is *not attempting* those, so letting them succeed in simulation destroyed the thing being measured. Both constraints now apply to both arms before any probability is considered.
 
-**4. The Razorpay test account can't do Subscriptions.** The key authenticates for Orders, Payments and Invoices but returns `401` on Subscriptions and Plans. The wrong responses were to crash on startup or to quietly pretend the calls happened. The adapter now probes what the account can actually do, writes the gap to the ledger, degrades to the simulator, and prints the degradation in the report. `uv run vasooli live` shows the probe and the real Orders it created.
+**4. The Razorpay test account couldn't do Subscriptions, then could.** The key initially authenticated for Orders, Payments and Invoices but returned `401` on Subscriptions and Plans — that product wasn't enabled on the account. The wrong responses were to crash on startup or to quietly pretend the calls happened. The adapter probes what the account can actually do rather than hardcoding either answer, writes the result to the ledger, and — while the gap existed — degraded to Orders-only with the degradation printed in the report. Once Subscriptions was enabled mid-build, the same probe picked it up with no code change, and `uv run vasooli live` now creates a real test-mode Plan and Subscription. That surfaced the next honest boundary: the subscription comes back `created`, not `active`, because activation needs the customer to complete mandate consent through checkout — a browser step this adapter refuses to automate on the customer's behalf, for the same reason the decision engine refuses to auto-act above the RBI cap. Both states — capability absent, capability present but requiring a human step — are logged and tested (`tests/test_razorpay_adapter.py`).
 
 The through-line: three of the four were cases where something *looked* like it was working. That is what the audit trail and the arm comparison are for.
 
@@ -230,7 +230,7 @@ uv run vasooli run
 uv run pytest
 ```
 
-75 tests. Hermetic — no network, no API keys, no gateway required.
+78 tests. Hermetic — no network, no API keys, no gateway required.
 
 ---
 

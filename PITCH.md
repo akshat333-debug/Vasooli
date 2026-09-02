@@ -83,7 +83,7 @@ rm -f vasooli.db && uv run vasooli seed && uv run vasooli run && uv run vasooli 
 
 > Everything measured here is synthetic and the README says exactly which parts are assumption and which are real Razorpay test-mode calls. The absolute rupee figure isn't a production claim. The comparison is, because both arms face identical records and identical random draws — if my thesis were wrong, the sequencer would lose on the same draws.
 >
-> 75 tests, hermetic. Every decision hash-chained.
+> 78 tests, hermetic. Every decision hash-chained.
 >
 > Retries are a budget of three. Vasooli spends them on the failures that can actually be recovered — and refuses, loudly and on the record, the ones that can't.
 

@@ -67,3 +67,50 @@ def test_live_errors_are_recorded_not_swallowed(monkeypatch, tmp_path):
     assert len(errs) == 2
     assert all("recorded rather than swallowed" in r["verdict"] for r in errs)
     L.close()
+
+
+def test_subscription_demo_skipped_and_logged_when_capability_absent(monkeypatch, tmp_path):
+    monkeypatch.setattr(rz, "probe", lambda: rz.Capabilities(
+        True, True, True, True, False, False))
+    monkeypatch.setattr(rz, "create_test_order", lambda rec: {"id": "order_FAKE", "status": "created"})
+    L = Ledger(tmp_path / "r3.db")
+    rz.run_live_probe(generate_batch(3, seed=1), L, run_id="test3", limit=1)
+    degraded = [r for r in L.rows("test3")
+                if r["event"] == "razorpay_degraded" and "subscription demo skipped" in r["verdict"]]
+    assert degraded
+    L.close()
+
+
+def test_subscription_created_when_capability_present(monkeypatch, tmp_path):
+    # Capability present -> the adapter must actually attempt subscription
+    # creation, and must record the real (non-"active") status honestly rather
+    # than implying the mandate is live.
+    monkeypatch.setattr(rz, "probe", lambda: rz.Capabilities(
+        True, True, True, True, True, True))
+    monkeypatch.setattr(rz, "create_test_subscription", lambda rec: {
+        "id": "sub_FAKE123", "status": "created", "short_url": "https://rzp.io/x",
+        "_vasooli_plan_id": "plan_FAKE123",
+    })
+    monkeypatch.setattr(rz, "create_test_order", lambda rec: {"id": "order_FAKE", "status": "created"})
+    L = Ledger(tmp_path / "r4.db")
+    rz.run_live_probe(generate_batch(3, seed=1), L, run_id="test4", limit=1)
+    rows = [r for r in L.rows("test4") if r["event"] == "razorpay_subscription_created"]
+    assert len(rows) == 1
+    assert "status='created'" in rows[0]["verdict"]
+    assert "does not perform on the customer's behalf" in rows[0]["verdict"]
+
+
+def test_subscription_creation_failure_is_recorded_not_swallowed(monkeypatch, tmp_path):
+    monkeypatch.setattr(rz, "probe", lambda: rz.Capabilities(
+        True, True, True, True, True, True))
+
+    def boom(rec):
+        raise rz.RazorpayUnavailable("plan creation failed [500]: nope")
+
+    monkeypatch.setattr(rz, "create_test_subscription", boom)
+    monkeypatch.setattr(rz, "create_test_order", lambda rec: {"id": "order_FAKE", "status": "created"})
+    L = Ledger(tmp_path / "r5.db")
+    rz.run_live_probe(generate_batch(3, seed=1), L, run_id="test5", limit=1)
+    errs = [r for r in L.rows("test5") if r["event"] == "razorpay_error"]
+    assert len(errs) == 1
+    L.close()
