@@ -66,7 +66,14 @@ class Decision(BaseModel):
     expected_success: float | None = None
     #: Human-readable reason. Always populated. This is what lands in the ledger.
     verdict: str
-    #: True when a Hinglish customer nudge should be drafted for this record.
+    #: True when this record warrants a customer nudge instead of, or
+    #: alongside, a retry — a terminal stop the customer must act on, or a
+    #: retry whose odds are poor enough that asking is worth more than
+    #: spending an attempt.
+    #:
+    #: NOTE: nothing consumes this yet. The drafter is not built, so no
+    #: interface claims one exists. The flag is the decision; the message
+    #: is the follow-on work.
     wants_nudge: bool = False
     #: Which numbered stopping rule decided this record (1-8, see module
     #: docstring). Exported so a viewer can show the trace without

@@ -59,7 +59,7 @@ rm -f vasooli.db && uv run vasooli seed && uv run vasooli run && uv run vasooli 
 >
 > And the model is allowed to say "I don't know." It declined to classify 3 of 4 unmapped records and sent them to a human. That's the guardrail working. A classifier that always sounds confident spends real retries on failures nobody understood.
 >
-> Then the important part: **no language model runs in the decision to move money.** Timing is a deterministic scorer over the legal retry window. Reproducible, testable, explainable to a regulator. A model decides how to talk to a customer. It never decides whether to debit one.
+> Then the important part: **no language model runs in the decision to move money.** Timing is a deterministic scorer over the legal retry window. Reproducible, testable, explainable to a regulator. A model reads what the bank wrote. It never decides whether to debit anyone.
 >
 > Seven stopping rules, each with a test that fails if the rule is deleted — because a deleted stopping rule doesn't crash anything, it just quietly starts burning attempts.
 >

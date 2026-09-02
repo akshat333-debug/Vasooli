@@ -143,7 +143,7 @@ The track grades *"the right tool in the right place, **and where you chose not 
 | Decide retry timing | **no model** | Non-determinism in a money decision is indefensible. |
 | Enforce limits | **no model** | A guardrail a model can argue past is not a guardrail. |
 
-**A language model decides how to talk to a customer. It never decides whether to move money.**
+**A language model reads what a bank wrote. It never decides whether to move money.**
 
 Two further choices worth naming:
 
