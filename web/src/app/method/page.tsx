@@ -6,6 +6,7 @@ const AI_TABLE = [
   ["Detect at-risk", "Rules", false, "Deterministic. A model here is a liability with no upside."],
   ["Classify the failure", "Claude Haiku", true, "Free text, bank-specific, open vocabulary. A genuine language problem."],
   ["Decide retry timing", "No model", false, "Non-determinism in a money decision is indefensible."],
+  ["Draft the customer nudge", "Claude Haiku", true, "Hinglish register. Guardrailed, and there is no send path in the module."],
   ["Enforce the limits", "No model", false, "A guardrail a model can argue past is not a guardrail."],
 ] as const;
 
@@ -106,8 +107,8 @@ export default function MethodPage() {
           Where a model is used, and where it is refused
         </h2>
         <p className="mb-5 text-[14px] text-ink-mute">
-          A language model reads what a bank wrote. It never decides whether to
-          move money.
+          A language model reads what a bank wrote and writes what a customer
+          reads. It never decides whether to move money.
         </p>
         <div className="overflow-hidden rounded-2xl border border-rule bg-paper-raised">
           {AI_TABLE.map(([stage, tool, uses, why]) => (

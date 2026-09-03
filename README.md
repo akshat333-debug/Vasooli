@@ -186,9 +186,31 @@ The track grades *"the right tool in the right place, **and where you chose not 
 | Detect at-risk | rules | Deterministic. A model here is a liability with no upside. |
 | Classify failure | **Claude Haiku** | Genuine NL problem: free text, bank-specific, open vocabulary. |
 | Decide retry timing | **no model** | Non-determinism in a money decision is indefensible. |
+| Draft the customer nudge | **Claude Haiku** | Hinglish register. Guardrailed and **never sent** — see below. |
 | Enforce limits | **no model** | A guardrail a model can argue past is not a guardrail. |
 
-**A language model reads what a bank wrote. It never decides whether to move money.**
+**A language model reads what a bank wrote and writes what a customer reads. It never decides whether to move money.**
+
+### The nudge drafter, and why it cannot hurt anyone
+
+`decide.py` flags which records warrant a message. Haiku writes the prose in Hinglish; it cannot choose who gets contacted, cannot change the amount, and cannot change what happens next.
+
+Its output is checked rather than trusted, because a model writing to a customer about money can cause harm a classifier cannot:
+
+- **No links.** A model that invents a payment link has invented a phishing target. Rejected outright, not cleaned up.
+- **No figures of its own.** The model writes a placeholder; the real amount is substituted from the record afterwards, so a wrong number is structurally impossible.
+- **No promises or threats.** Refunds, waivers, discounts, account closure, legal language — those are commitments a merchant makes.
+- **Bounded length.** Long enough to bury a term is too long.
+
+Failed drafts are discarded and *counted*, never repaired — repairing them would hide how often the model produces one.
+
+**There is no send path in the module and no configuration that adds one.** Drafts go to the audit trail for a person to review. Sending has a recipient, a channel and a consent question attached, and none of those belong to an unattended batch. A test asserts the absence of a send function, so adding one requires arguing for it.
+
+> Aapka autopay mandate expire ho gaya hai. Naya mandate set karne ke liye payment settings mein jaaye.
+>
+> Aapke account mein balance kam hai, isliye Rs 1,299 ka payment fail ho gaya. Please balance add karke dobara try kijiye.
+
+*Real drafts from `uv run vasooli nudge`. The rupee figures were substituted by the engine, not written by the model.*
 
 Two further choices worth naming:
 
@@ -322,6 +344,7 @@ uv run vasooli run
 | `vasooli run` | Both arms + the compliance-adjusted report |
 | `vasooli demo-trip` | Show the batch breaker halting a run mid-flight |
 | `vasooli live` | Probe the real Razorpay test API and create test Orders |
+| `vasooli nudge` | Draft customer messages for review — sends nothing |
 | `vasooli experiments` | Seed sweep, attribution, ablation, calibration |
 | `vasooli export` | Emit the batch as JSON for the interface |
 | `vasooli verify-ledger` | Recompute the audit hash chain |
@@ -330,7 +353,7 @@ uv run vasooli run
 uv run pytest
 ```
 
-114 tests, 93% coverage on the engine. Hermetic — no network, no API keys, no gateway required.
+133 tests, 93% coverage on the engine. Hermetic — no network, no API keys, no gateway required.
 
 ---
 
@@ -349,6 +372,7 @@ vasooli/
 ├── razorpay_adapter.py   test-mode only; capability-probed
 ├── export.py            serialises a real run for the interface
 ├── experiments.py       sweep, attribution, ablation, calibration
+├── nudge.py             Hinglish drafting, guardrailed, never sends
 └── sim/
     ├── model.py          the assumptions, as named constants
     └── seed.py           seeded batch with three hazards built in

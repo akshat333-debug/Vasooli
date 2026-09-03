@@ -9,6 +9,7 @@ from collections import Counter
 
 from dotenv import load_dotenv
 
+from .decide import decide
 from .diagnose import diagnose_batch
 from .execute import run_batch
 from .experiments import (
@@ -20,6 +21,7 @@ from .experiments import (
 )
 from .export import write_payload
 from .ledger import Ledger
+from .nudge import draft_batch, wants_nudge_count
 from .policy import RecoveryPolicy
 from .razorpay_adapter import run_live_probe
 from .report import render
@@ -241,6 +243,44 @@ def _cmd_experiments(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_nudge(args: argparse.Namespace) -> int:
+    """Draft customer messages for records the engine flagged. Sends nothing."""
+    import uuid
+
+    batch = generate_batch(args.n, seed=args.seed)
+    ledger = Ledger(args.db)
+    run_id = uuid.uuid4().hex[:12]
+
+    diagnoses, _ = diagnose_batch(batch, use_llm=False)
+    by = {d.subscription_id: d for d in diagnoses}
+    pairs = [(r, decide(r, by[r.subscription_id].failure_class, BATCH_NOW)) for r in batch]
+
+    breakdown = wants_nudge_count(pairs)
+    stats = draft_batch(pairs, ledger, run_id=run_id,
+                        use_llm=not args.no_llm, limit=args.limit)
+
+    print("Nudge drafting — NOTHING IS SENT. Drafts go to the audit trail for review.\n")
+    total_flagged = sum(breakdown.values())
+    print(f"  flagged by the engine : {total_flagged}")
+    for action, n in sorted(breakdown.items(), key=lambda kv: -kv[1]):
+        print(f"      {action:22} {n}")
+    if stats["flagged"] < total_flagged:
+        print(f"  drafted this run      : {stats['flagged']} (--limit)")
+    print(f"  drafted               : {stats['drafted']}")
+    print(f"  rejected by guardrail : {stats['rejected']}")
+    print(f"  model unavailable     : {stats['unavailable']}")
+
+    rows = [r for r in ledger.rows(run_id) if r["event"] == "nudge_drafted"]
+    if rows:
+        print("\n  Sample drafts:")
+        import json as _json
+        for r in rows[: args.show]:
+            draft = _json.loads(r["payload"]).get("draft", "")
+            print(f"    {r['subscription_id']}  {draft}")
+    ledger.close()
+    return 0
+
+
 def _cmd_verify_ledger(args: argparse.Namespace) -> int:
     L = Ledger(args.db)
     r = L.verify()
@@ -304,6 +344,15 @@ def main(argv: list[str] | None = None) -> int:
     x.add_argument("-n", type=int, default=100)
     x.add_argument("--out", help="also write the results to this file")
     x.set_defaults(fn=_cmd_experiments)
+
+    ng = sub.add_parser("nudge", help="draft customer messages (never sends)")
+    ng.add_argument("-n", type=int, default=100)
+    ng.add_argument("--seed", type=int, default=42)
+    ng.add_argument("--limit", type=int, default=8)
+    ng.add_argument("--show", type=int, default=5)
+    ng.add_argument("--no-llm", action="store_true")
+    ng.add_argument("--db", default="vasooli.db")
+    ng.set_defaults(fn=_cmd_nudge)
 
     v = sub.add_parser("verify-ledger", help="recompute the audit hash chain")
     v.add_argument("--db", default="vasooli.db")
