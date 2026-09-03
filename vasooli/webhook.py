@@ -42,7 +42,7 @@ import hmac
 import json
 import os
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from .ledger import Ledger
@@ -98,6 +98,18 @@ class Ingested:
     note: str
 
 
+def _utc_naive(epoch: int | float) -> datetime:
+    """Razorpay sends UTC Unix timestamps.
+
+    `fromtimestamp()` without a timezone reads them in LOCAL time, which would
+    shift a mandate's expiry by the host's offset — an engine reasoning about
+    dates would then schedule against the wrong day. Read as UTC explicitly,
+    then drop the tzinfo so the value stays comparable with the rest of the
+    engine, which is naive throughout by design.
+    """
+    return datetime.fromtimestamp(epoch, tz=UTC).replace(tzinfo=None)
+
+
 def _payload_entity(payload: dict[str, Any], name: str) -> dict[str, Any]:
     return (payload.get("payload", {}).get(name, {}) or {}).get("entity", {}) or {}
 
@@ -144,7 +156,7 @@ def to_record(event: dict[str, Any], now: datetime) -> AtRiskRecord:
         # refused. Missing information must never widen the envelope.
         mandate_max_amount_paise=int(sub.get("max_amount") or max(amount, 1)),
         mandate_valid_until=(
-            datetime.fromtimestamp(sub["end_at"]) if sub.get("end_at")
+            _utc_naive(sub["end_at"]) if sub.get("end_at")
             else now + timedelta(days=365)
         ),
         subscription_status=(
@@ -155,7 +167,7 @@ def to_record(event: dict[str, Any], now: datetime) -> AtRiskRecord:
         error_reason=err_reason,
         error_description=err_desc,
         last_attempt_at=(
-            datetime.fromtimestamp(event["created_at"]) if event.get("created_at") else now
+            _utc_naive(event["created_at"]) if event.get("created_at") else now
         ),
         # No notice can be assumed from an event. Absent proof that one was
         # sent, the engine must schedule as though it has not been.
@@ -180,7 +192,7 @@ def ingest(
     """
     verify_signature(body, signature, secret)
 
-    now = now or datetime.now()
+    now = now or datetime.now(tz=UTC).replace(tzinfo=None)
     try:
         event = json.loads(body)
     except json.JSONDecodeError as e:

@@ -173,3 +173,17 @@ def test_the_module_makes_no_decisions():
     from vasooli import webhook
     src = inspect.getsource(webhook)
     assert "run_batch" not in src and "best_retry_time" not in src
+
+
+def test_razorpay_timestamps_are_read_as_utc_not_local_time():
+    # fromtimestamp() without a tz reads a UTC epoch in LOCAL time, shifting a
+    # mandate's expiry by the host's offset. An engine that reasons about dates
+    # would then schedule against the wrong day depending on where it runs.
+    from datetime import UTC, datetime
+
+    epoch = 1_800_000_000
+    e = event()
+    e["payload"]["subscription"]["entity"]["end_at"] = epoch
+    rec = to_record(e, BATCH_NOW)
+    expected = datetime.fromtimestamp(epoch, tz=UTC).replace(tzinfo=None)
+    assert rec.mandate_valid_until == expected
