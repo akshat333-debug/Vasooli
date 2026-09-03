@@ -9,6 +9,7 @@ from collections import Counter
 
 from dotenv import load_dotenv
 
+from .bandit import run_study, shift_sweep
 from .decide import decide
 from .diagnose import diagnose_batch
 from .execute import run_batch
@@ -282,6 +283,37 @@ def _cmd_nudge(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_bandit(args: argparse.Namespace) -> int:
+    """Can a learned policy beat the hand-specified one? Honest answer."""
+    r = run_study()
+    print("Learned retry timing vs the deterministic scorer\n")
+    print(f"  trained on {r['train_seeds']} seeds, tested on {r['test_seeds']} held out")
+    print(f"  {r['observations']} observations across {r['contexts']} contexts\n")
+    for k, label in (("in_distribution", "same world as training"),
+                     ("out_of_distribution", "world shifted underneath it")):
+        d = r[k]
+        print(f"  {label:30} learned {d['learned']:.3f}   "
+              f"heuristic {d['heuristic']:.3f}   retry-now {d['retry_immediately']:.3f}")
+    print(f"\n  edge in-distribution     {r['edge_in_dist_pts']:+.2f} pts")
+    print(f"  edge out-of-distribution {r['edge_out_of_dist_pts']:+.2f} pts")
+
+    print("\n  In-distribution the heuristic is not a competitor, it is an oracle:")
+    print("  it grid-searches the exact function the outcomes are drawn from.")
+    print("  Losing to it there is arithmetic. The question is what happens as")
+    print("  the world stops matching the assumptions.\n")
+
+    sw = shift_sweep()
+    print(f"  {'shift':>6} {'learned':>9} {'heuristic':>11} {'edge':>9}")
+    for x in sw["rows"]:
+        print(f"  {x['shift']:>6.2f} {x['learned']:>9.3f} {x['heuristic']:>11.3f} "
+              f"{x['edge_pts']:>+9.2f}")
+    print(f"\n  deficit narrows as the world diverges: {sw['deficit_narrows']} "
+          f"({sw['narrowed_by_pts']:+.2f} pts)")
+    print(f"  crossover: {sw['crossover_shift'] if sw['crossover_shift'] is not None else 'none in the tested range'}")
+    print(f"\n  {r['verdict']}")
+    return 0
+
+
 def _cmd_verify_ledger(args: argparse.Namespace) -> int:
     L = Ledger(args.db)
     r = L.verify()
@@ -354,6 +386,9 @@ def main(argv: list[str] | None = None) -> int:
     ng.add_argument("--no-llm", action="store_true")
     ng.add_argument("--db", default="vasooli.db")
     ng.set_defaults(fn=_cmd_nudge)
+
+    bd = sub.add_parser("bandit", help="learned retry timing vs the scorer")
+    bd.set_defaults(fn=_cmd_bandit)
 
     v = sub.add_parser("verify-ledger", help="recompute the audit hash chain")
     v.add_argument("--db", default="vasooli.db")

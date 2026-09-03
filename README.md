@@ -95,6 +95,38 @@ The grid search over the payday cycle is the most elaborate part of this engine 
 
 Confirming it independently: closing the assumed payday gap to **zero** — removing every reason for timing to matter — still leaves the sequencer ahead by +147% at a 100% win rate. If timing were doing the work, that should have collapsed it.
 
+### The machine learning did not work, and that is the finding
+
+The obvious upgrade to `best_retry_time` is to stop grid-searching over constants a human wrote down and learn the timing from outcomes. So that was built: a Beta-Bernoulli Thompson-sampling bandit over five coarse delay arms, conditioned on failure class, pay-cycle position and attempt index.
+
+It **loses to the hand-specified scorer**, and it loses in both worlds.
+
+| | learned | heuristic | edge |
+|---|---:|---:|---:|
+| Same world as training | 0.459 | 0.552 | **−9.26 pts** |
+| World shifted underneath it | 0.395 | 0.441 | **−4.63 pts** |
+
+Two things make that number honest rather than embarrassing.
+
+**In-distribution, the heuristic is not a competitor — it is an oracle.** It grid-searches the exact probability function the outcomes are drawn from. Nothing can beat it there, and a learner that appeared to would be a bug, not a breakthrough. Any project reporting a bandit beating a heuristic on its own simulator is reporting that it handed the learner an answer key.
+
+**The interesting question is what happens as the world stops matching the assumptions.** Shifting the simulator's constants progressively:
+
+| Shift | learned | heuristic | edge |
+|---:|---:|---:|---:|
+| 0.0 | 0.459 | 0.552 | −9.26 |
+| 0.2 | 0.453 | 0.534 | −8.03 |
+| 0.4 | 0.442 | 0.514 | −7.25 |
+| 0.6 | 0.429 | 0.495 | −6.64 |
+| 0.8 | 0.408 | 0.467 | −5.94 |
+| 1.0 | 0.395 | 0.441 | −4.63 |
+
+The deficit narrows monotonically — the learner halves its disadvantage as the assumptions degrade, which is what you would expect if it has learned something the assumptions do not contain. **But it never crosses zero in the tested range.** Extrapolating to a crossover would be inventing a result; the honest statement is that learning starts to pay only once your assumptions are badly wrong, and finding out whether they are requires real data rather than more simulation.
+
+**So the bandit is not wired into `decide.py`, and a test enforces that.** A sampled policy in a money path forfeits the reproducibility this project rests on, and it would need a frozen posterior and a way to explain one specific debit to a regulator before it could be worth that trade. Neither exists.
+
+One implementation note kept because it generalises: the first context included `bank`, producing 1,055 cells against ~2,200 observations — a median of **one** observation per cell. A posterior built on one sample is a random number generator with extra steps. The power check caught it before any accuracy number was read, which is the order those two things should be looked at in.
+
 ### Every stopping rule was priced
 
 Each rule switched off in turn, averaged across seeds:
@@ -354,6 +386,7 @@ uv run vasooli run
 | `vasooli live` | Probe the real Razorpay test API and create test Orders |
 | `vasooli nudge` | Draft customer messages for review — sends nothing |
 | `vasooli experiments` | Seed sweep, attribution, ablation, calibration |
+| `vasooli bandit` | Learned retry timing vs the deterministic scorer |
 | `vasooli export` | Emit the batch as JSON for the interface |
 | `vasooli verify-ledger` | Recompute the audit hash chain |
 
@@ -361,7 +394,7 @@ uv run vasooli run
 uv run pytest
 ```
 
-149 tests, 93% coverage on the engine. Hermetic — no network, no API keys, no gateway required.
+157 tests, 93% coverage on the engine. Hermetic — no network, no API keys, no gateway required.
 
 ---
 
@@ -382,6 +415,7 @@ vasooli/
 ├── experiments.py       sweep, attribution, ablation, calibration
 ├── nudge.py             Hinglish drafting, guardrailed, never sends
 ├── promise.py           promise-to-pay; may only move a retry later
+├── bandit.py            learned timing — an experiment, and a negative one
 └── sim/
     ├── model.py          the assumptions, as named constants
     └── seed.py           seeded batch with three hazards built in
