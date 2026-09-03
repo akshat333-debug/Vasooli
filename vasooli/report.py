@@ -49,6 +49,7 @@ def render(
     *,
     ledger_ok: bool,
     ledger_rows: int,
+    ledger_detail: str = "",
     llm_stats: dict[str, Any] | None = None,
 ) -> str:
     b_in, b_over = compliance_split(baseline, records)
@@ -188,6 +189,8 @@ def render(
     add("CONTROLS")
     add("-" * 78)
     add(f"  Audit chain verified : {'INTACT' if ledger_ok else 'BROKEN'} ({ledger_rows} rows)")
+    if ledger_detail:
+        add(f"    {ledger_detail}")
     for w in sequencer.soft_warnings:
         add(f"  Soft warning         : {w}")
     add(f"  Batch breaker        : {sequencer.tripped or 'not tripped'}")

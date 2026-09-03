@@ -168,6 +168,8 @@ def build_payload(
             "rows": verify.rows,
             "broken_at": verify.broken_at,
             "detail": verify.detail,
+            "keyed": verify.keyed,
+            "strength": verify.strength,
             "entries": entries,
         },
         "llm": llm_stats,

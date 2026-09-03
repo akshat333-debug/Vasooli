@@ -234,9 +234,17 @@ Checked in order. Cheapest and most certain refusals first.
 | 7 | Mandate expires before the notice period elapses | STOP — no lawful window exists |
 | 8 | Otherwise | Schedule the retry at its best moment, bounded by mandate validity |
 
+**Promises to pay** sit outside these rules rather than inside them. A customer's stated date can move a scheduled retry *later*, and nothing else: it cannot pull one forward, add an attempt, raise a cap, or reopen a record the rules refused. Unverified input arriving over an untrusted channel may only push a money action away, never nearer. Trust also decays — after two broken promises the customer's word stops moving the schedule and the record goes to a person.
+
 Plus batch-level ceilings on actions and total value, with a soft warning at 80% before the hard trip, and a legal floor: no debit is scheduled before the RBI pre-debit notice period has elapsed — **applied to both arms**, because comparing a compliant system against a non-compliant one would prove nothing.
 
 Every rule has a test that fails if the rule is deleted (`tests/test_decide.py`). A stopping rule that is silently removed does not crash anything — it just starts spending retries on debits that cannot succeed, and the only symptom is a slightly worse number in a report nobody re-derives.
+
+### On the audit trail, honestly
+
+The chain is keyed with HMAC-SHA256, not a plain hash. A plain chain detects an accidental edit and nothing else — anyone who can write to the database can recompute every subsequent hash and the result verifies clean, which protects against corruption but not against the insider an audit trail exists for. With `VASOOLI_LEDGER_KEY` set, forging the chain needs the key as well as write access.
+
+Unset, it still runs, using a published constant, and `verify()` reports **tamper-evident** rather than **tamper-proof** — in those words. A project someone clones must work out of the box, and it must not claim a protection it does not have.
 
 ### On RunFuse, honestly
 
@@ -353,7 +361,7 @@ uv run vasooli run
 uv run pytest
 ```
 
-133 tests, 93% coverage on the engine. Hermetic — no network, no API keys, no gateway required.
+149 tests, 93% coverage on the engine. Hermetic — no network, no API keys, no gateway required.
 
 ---
 
@@ -373,6 +381,7 @@ vasooli/
 ├── export.py            serialises a real run for the interface
 ├── experiments.py       sweep, attribution, ablation, calibration
 ├── nudge.py             Hinglish drafting, guardrailed, never sends
+├── promise.py           promise-to-pay; may only move a retry later
 └── sim/
     ├── model.py          the assumptions, as named constants
     └── seed.py           seeded batch with three hazards built in

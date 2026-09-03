@@ -5,9 +5,26 @@ executed — what was seen, what it was classified as, what was decided, why, an
 what happened. The chain exists so the audit trail cannot be quietly edited after
 the fact to make a batch look better than it was.
 
-Chain rule: hash(row) = sha256(prev_hash || canonical_json(payload)). Changing any
-historical payload breaks every hash after it, and `verify()` reports the first
-broken index rather than a bare True/False, so a tamper is locatable.
+Chain rule: hash(row) = HMAC-SHA256(key, prev_hash || canonical_json(payload)).
+Changing any historical payload breaks every hash after it, and `verify()`
+reports the first broken index rather than a bare True/False, so a tamper is
+locatable.
+
+WHY HMAC AND NOT A PLAIN HASH
+
+A plain SHA-256 chain detects an *accidental* edit and nothing else. Anyone who
+can write to the database can also recompute every subsequent hash, and the
+result verifies clean — which means the chain protects against corruption but
+not against the insider it was built for.
+
+Keying the chain fixes that: forging it now requires the key as well as write
+access, and the key lives outside the database. Set VASOOLI_LEDGER_KEY and the
+chain is unforgeable without it.
+
+If the variable is unset the ledger still works, using a published constant, and
+`verify()` says so in plain words rather than implying a protection it does not
+have. That is the honest default for a project someone clones and runs: it must
+work out of the box, and it must not overstate what it proved.
 
 Pattern carried over from QuantProto's experiment ledger, where the same problem
 appears: a number is only trustworthy if the record behind it cannot be revised.
@@ -16,7 +33,9 @@ appears: a number is only trustworthy if the record behind it cannot be revised.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
+import os
 import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -24,6 +43,17 @@ from pathlib import Path
 from typing import Any
 
 GENESIS = "0" * 64
+
+#: Used when VASOOLI_LEDGER_KEY is unset. Published on purpose — a secret in
+#: source control is not a secret, and pretending otherwise would be worse than
+#: saying plainly that an unkeyed chain is tamper-EVIDENT but not tamper-PROOF.
+_UNKEYED = b"vasooli-unkeyed-ledger"
+
+
+def _key() -> tuple[bytes, bool]:
+    """(key, is_keyed). Read at call time so tests can set it per-case."""
+    env = os.environ.get("VASOOLI_LEDGER_KEY", "")
+    return (env.encode(), True) if env else (_UNKEYED, False)
 
 _SCHEMA = """
 create table if not exists ledger (
@@ -48,7 +78,9 @@ def _canonical(payload: dict[str, Any]) -> str:
 
 
 def _row_hash(prev_hash: str, payload: dict[str, Any]) -> str:
-    return hashlib.sha256((prev_hash + _canonical(payload)).encode()).hexdigest()
+    key, _ = _key()
+    return hmac.new(key, (prev_hash + _canonical(payload)).encode(),
+                    hashlib.sha256).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -58,6 +90,15 @@ class VerifyResult:
     #: Ledger index of the first row whose hash does not match. None when ok.
     broken_at: int | None = None
     detail: str = ""
+    #: False when the chain was built with the published fallback key, i.e.
+    #: anyone with write access could rebuild it and it would still verify.
+    keyed: bool = False
+
+    @property
+    def strength(self) -> str:
+        if not self.ok:
+            return "broken"
+        return "tamper-proof" if self.keyed else "tamper-evident"
 
 
 class Ledger:
@@ -135,7 +176,13 @@ class Ledger:
                     f"row {r['idx']}: payload was modified after it was written",
                 )
             prev = r["hash"]
-        return VerifyResult(True, len(rows), None, "chain intact")
+        _, keyed = _key()
+        detail = (
+            "chain intact, keyed" if keyed else
+            "chain intact, unkeyed — detects accidental edits, but anyone with "
+            "write access could rebuild it; set VASOOLI_LEDGER_KEY to prevent that"
+        )
+        return VerifyResult(True, len(rows), None, detail, keyed)
 
     def rows(self, run_id: str | None = None) -> list[sqlite3.Row]:
         if run_id:

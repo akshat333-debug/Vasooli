@@ -80,6 +80,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
     v = ledger.verify()
     out = render(baseline, sequencer, batch, ledger_ok=v.ok, ledger_rows=v.rows,
+                 ledger_detail=v.detail,
                  llm_stats=None if args.no_llm else llm_stats)
     ledger.close()
 
