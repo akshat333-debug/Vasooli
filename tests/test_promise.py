@@ -5,7 +5,6 @@ from datetime import timedelta
 import pytest
 
 from vasooli.decide import Action, decide
-from vasooli.diagnose import diagnose_batch
 from vasooli.models import MandateStatus
 from vasooli.promise import (
     MAX_HONOURED_MISSES,
