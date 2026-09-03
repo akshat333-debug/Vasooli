@@ -14,10 +14,10 @@ Value at risk   : Rs 277,822.71
 HEADLINE - compliance-adjusted (what automation may lawfully do alone)
 ------------------------------------------------------------------------------
                                 baseline       sequencer           delta
-  recovered                 Rs 66,767.00    Rs 71,864.00     Rs 5,097.00
-  attempts spent                     154              71             -83
-  wasted attempts                    120              35             -85
-  recovered / attempt          Rs 635.14     Rs 1,012.17       Rs 377.03
+  recovered                 Rs 57,571.00    Rs 58,875.00     Rs 1,304.00
+  attempts spent                     165              77             -88
+  wasted attempts                    134              52             -82
+  recovered / attempt          Rs 348.92       Rs 764.61       Rs 415.70
 
   Headline metric is recovery per attempt, because the retry budget is
   the scarce resource - three attempts, then the subscription halts.
@@ -25,8 +25,11 @@ HEADLINE - compliance-adjusted (what automation may lawfully do alone)
 ------------------------------------------------------------------------------
 RAW TOTALS - shown for honesty, not as the claim
 ------------------------------------------------------------------------------
-  baseline  recovered Rs 97,812.08  (of which Rs 31,045.08 came from debits above the RBI standard cap)
-  sequencer recovered Rs 71,864.00  (of which Rs 0.00 came from debits above the RBI standard cap)
+  baseline  recovered Rs 131,224.24  (of which Rs 73,653.24 came from debits above the RBI standard cap)
+  sequencer recovered Rs 58,875.00  (of which Rs 0.00 came from debits above the RBI standard cap)
+  raw recovered / attempt: baseline Rs 795.30, sequencer Rs 764.61
+  (both numerators include above-cap debits; shown so the adjusted
+   headline above can be checked against the unadjusted figures)
 
   NOTE: the baseline's raw total is higher only because it made
   unattended debits above the cap. Those are not recoveries a merchant
@@ -35,11 +38,11 @@ RAW TOTALS - shown for honesty, not as the claim
 ------------------------------------------------------------------------------
 EXCEPTION LIST - every record not recovered by the sequencer
 ------------------------------------------------------------------------------
-    15    Rs 20,885.00   all available attempts spent without recovery
+    22    Rs 29,378.00   all available attempts spent without recovery
     13    Rs 21,587.00   stopped: retry budget exhausted (3/3)
+     9    Rs 11,891.00   stopped at execution: mandate revoked after the decision was made
      9    Rs 17,591.00   stopped: MANDATE_REVOKED
      5     Rs 3,495.00   stopped: mandate is revoked despite a INSUFFICIENT_FUNDS failure
-     5     Rs 7,395.00   stopped at execution: mandate revoked after the decision was made
      5     Rs 4,195.00   stopped: LIMIT_EXCEEDED
      4     Rs 6,396.00   stopped: MANDATE_EXPIRED
      3     Rs 1,497.00   human review: failure could not be classified by dict or model
@@ -48,16 +51,16 @@ EXCEPTION LIST - every record not recovered by the sequencer
      1    Rs 31,045.08   human review: amount ₹31,045.08 exceeds the RBI e-mandate standard cap
      1    Rs 42,608.16   human review: amount ₹42,608.16 exceeds the RBI e-mandate standard cap
 
-  64 of 100 records unrecovered, Rs 205,958.71 still at risk.
-  Attempts preserved by refusing to act: 75
+  75 of 100 records unrecovered, Rs 218,947.71 still at risk.
+  Attempts preserved by refusing to act: 86
 
 ------------------------------------------------------------------------------
 FAILURE MIX
 ------------------------------------------------------------------------------
-  INSUFFICIENT_FUNDS       53 records,  23 recovered
-  BANK_DOWNTIME            14 records,  11 recovered
+  INSUFFICIENT_FUNDS       53 records,  15 recovered
+  BANK_DOWNTIME            14 records,   9 recovered
   MANDATE_REVOKED          10 records,   0 recovered
-  TECHNICAL_ERROR           6 records,   2 recovered
+  TECHNICAL_ERROR           6 records,   1 recovered
   LIMIT_EXCEEDED            6 records,   0 recovered
   MANDATE_EXPIRED           5 records,   0 recovered
   UNKNOWN                   3 records,   0 recovered
@@ -75,6 +78,6 @@ AI USAGE
 ------------------------------------------------------------------------------
 CONTROLS
 ------------------------------------------------------------------------------
-  Audit chain verified : INTACT (434 rows)
+  Audit chain verified : INTACT (455 rows)
   Batch breaker        : not tripped
 ==============================================================================

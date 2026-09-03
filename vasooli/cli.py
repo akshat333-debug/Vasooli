@@ -11,6 +11,13 @@ from dotenv import load_dotenv
 
 from .diagnose import diagnose_batch
 from .execute import run_batch
+from .experiments import (
+    ablate,
+    calibration,
+    decompose,
+    find_breaking_point,
+    sweep,
+)
 from .export import write_payload
 from .ledger import Ledger
 from .policy import RecoveryPolicy
@@ -65,9 +72,9 @@ def _cmd_run(args: argparse.Namespace) -> int:
     diagnoses, llm_stats = diagnose_batch(batch, use_llm=not args.no_llm)
 
     baseline = run_batch(batch, arm="baseline", now=BATCH_NOW, ledger=ledger,
-                         diagnoses=diagnoses)
+                         diagnoses=diagnoses, draw_salt=str(args.seed))
     sequencer = run_batch(batch, arm="sequencer", now=BATCH_NOW, ledger=ledger,
-                          diagnoses=diagnoses)
+                          diagnoses=diagnoses, draw_salt=str(args.seed))
 
     v = ledger.verify()
     out = render(baseline, sequencer, batch, ledger_ok=v.ok, ledger_rows=v.rows,
@@ -87,7 +94,8 @@ def _cmd_demo_trip(args: argparse.Namespace) -> int:
     batch = generate_batch(args.n, seed=args.seed)
     ledger = Ledger(args.db)
     policy = RecoveryPolicy(max_actions_per_batch=args.cap)
-    res = run_batch(batch, arm="sequencer", now=BATCH_NOW, ledger=ledger, policy=policy)
+    res = run_batch(batch, arm="sequencer", now=BATCH_NOW, ledger=ledger,
+                    policy=policy, draw_salt=str(args.seed))
     print(f"Batch breaker set to {args.cap} unattended actions.\n")
     print(f"  actions taken : {res.actions_taken}")
     print(f"  tripped       : {res.tripped}")
@@ -134,6 +142,102 @@ def _cmd_export(args: argparse.Namespace) -> int:
                       use_llm=not args.no_llm, db_path=args.db)
     size = p.stat().st_size
     print(f"wrote {p} ({size / 1024:.0f} KB)")
+    return 0
+
+
+def _cmd_experiments(args: argparse.Namespace) -> int:
+    """Run the experiments that test whether the claim survives scrutiny."""
+    seeds = list(range(1, args.seeds + 1))
+    out: list[str] = []
+    add = out.append
+
+    add("=" * 76)
+    add("VASOOLI - EXPERIMENTS")
+    add("=" * 76)
+    add(f"{len(seeds)} seeds x {args.n} records, dictionary-only classification.")
+    add("")
+
+    add("-" * 76)
+    add("1. SEED SWEEP - is the headline an artefact of seed 42?")
+    add("-" * 76)
+    sw = sweep(seeds, args.n).summary()
+    add(f"  sequencer led on recovery-per-attempt in {sw['wins']}/{sw['seeds']} seeds")
+    add(f"  median delta  {sw['median_delta_pct']:+.1f}%")
+    add(f"  5th pct       {sw['p05_delta_pct']:+.1f}%")
+    add(f"  95th pct      {sw['p95_delta_pct']:+.1f}%")
+    add(f"  worst seed    {sw['worst_delta_pct']:+.1f}%")
+    add(f"  losing seeds  {sw['losing_seeds'] or 'none'}")
+    add("")
+
+    add("-" * 76)
+    add("2. ATTRIBUTION - is the advantage timing, or refusal?")
+    add("-" * 76)
+    dc = decompose(seeds, args.n)
+    for key, label in (("A_baseline", "A  baseline"),
+                       ("B_refuse_only", "B  refusals, naive timing"),
+                       ("C_full", "C  refusals + optimal timing")):
+        v = dc[key]
+        add(f"  {label:30} Rs {v['per_attempt_paise'] / 100:>8,.2f}/attempt "
+            f"({v['attempts']:.0f} attempts)")
+    a = dc["attribution"]
+    add("")
+    add(f"  from REFUSING  Rs {a['from_refusing_paise'] / 100:>7,.2f}/attempt "
+        f"({a['refusing_share']:.0%} of the gain)")
+    add(f"  from TIMING    Rs {a['from_timing_paise'] / 100:>7,.2f}/attempt "
+        f"({a['timing_share']:.0%} of the gain)")
+    add("")
+    add("  Refusing doomed attempts is the dominant mechanism. Timing helps, but")
+    add("  it is the smaller half by a wide margin - worth saying plainly rather")
+    add("  than implying the grid search is what makes this work.")
+    add("")
+
+    add("-" * 76)
+    add("3. BREAKING POINT - how wrong can the assumptions be?")
+    add("-" * 76)
+    bp = find_breaking_point(seeds, args.n)
+    add(f"  replenishment gap as assumed: {bp['original_gap']}")
+    add(f"  {'gap':>7} {'median delta':>14} {'win rate':>10}")
+    for r in bp["rows"]:
+        add(f"  {r['gap']:>7.3f} {r['median_delta_pct']:>13.1f}% {r['win_rate']:>10.0%}")
+    add("")
+    if bp["breaks_below_gap"] is None:
+        add("  The advantage survives closing the payday gap entirely, which is")
+        add("  consistent with the attribution above: most of it never depended")
+        add("  on timing in the first place.")
+    else:
+        add(f"  Advantage disappears below a gap of {bp['breaks_below_gap']}.")
+    add("")
+
+    add("-" * 76)
+    add("4. RULE ABLATION - what is each stopping rule worth?")
+    add("-" * 76)
+    add(f"  {'rule':>4}  {'name':38} {'attempts':>9} {'wasted':>8} {'above cap':>11}")
+    for r in ablate(seeds, args.n):
+        add(f"  {r['rule']:>4}  {r['name'][:38]:38} {r['attempts']:>9.1f} "
+            f"{r['wasted']:>8.1f} {r['above_cap_paise'] / 100:>11,.0f}")
+    add("")
+    add("  Row 0 is every rule on. Each other row is that rule switched off.")
+    add("  Higher attempts or wasted counts are the cost of removing it.")
+    add("")
+
+    add("-" * 76)
+    add("5. CALIBRATION - do the reported probabilities mean anything?")
+    add("-" * 76)
+    add(f"  {'bucket':>10} {'n':>6} {'predicted':>11} {'observed':>10}")
+    for c in calibration(seeds, args.n):
+        add(f"  {c['bucket']:>10} {c['n']:>6} {c['predicted']:>11.3f} {c['observed']:>10.3f}")
+    add("")
+    add("  Internal consistency only: predictions and outcomes come from the same")
+    add("  assumed model, so agreement shows the scheduler reads its own model")
+    add("  correctly. It is not evidence about real banks.")
+    add("=" * 76)
+
+    text = "\n".join(out)
+    print(text)
+    if args.out:
+        with open(args.out, "w") as fh:
+            fh.write(text + "\n")
+        print(f"\nwritten to {args.out}")
     return 0
 
 
@@ -194,6 +298,12 @@ def main(argv: list[str] | None = None) -> int:
     e.add_argument("--db", default="vasooli-web.db")
     e.add_argument("--out", default="web/data/batch.json")
     e.set_defaults(fn=_cmd_export)
+
+    x = sub.add_parser("experiments", help="sweep, attribution, ablation, calibration")
+    x.add_argument("--seeds", type=int, default=30, help="run seeds 1..N")
+    x.add_argument("-n", type=int, default=100)
+    x.add_argument("--out", help="also write the results to this file")
+    x.set_defaults(fn=_cmd_experiments)
 
     v = sub.add_parser("verify-ledger", help="recompute the audit hash chain")
     v.add_argument("--db", default="vasooli.db")

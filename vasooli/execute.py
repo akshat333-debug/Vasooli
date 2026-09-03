@@ -60,14 +60,25 @@ LATE_REVOCATION_RATE = 0.08
 BASELINE_OFFSETS_DAYS = (1, 3, 5)
 
 
-def _draw(subscription_id: str, attempt_index: int) -> float:
-    """The shared uniform draw. Identical across arms by construction."""
-    h = hashlib.sha256(f"{subscription_id}:{attempt_index}".encode()).hexdigest()
+def _draw(subscription_id: str, attempt_index: int, salt: str = "") -> float:
+    """The shared uniform draw. Identical across arms by construction.
+
+    `salt` exists because generate_batch reuses the same subscription ids for
+    every seed (sub_SYN0000 ...). Without a salt, every seed in a sweep drew the
+    SAME 300 luck values — the seed varied which failure sat in each slot but not
+    whether that slot got lucky. Within one comparison that was harmless, since
+    both arms still shared the draw, but it meant a 200-seed sweep was far less
+    independent than the number suggested.
+
+    Callers pass the batch seed. Both arms of a comparison always receive the
+    same salt, so the fairness property is untouched.
+    """
+    h = hashlib.sha256(f"{salt}:{subscription_id}:{attempt_index}".encode()).hexdigest()
     return int(h[:16], 16) / float(1 << 64)
 
 
-def _late_revocation(subscription_id: str) -> bool:
-    h = hashlib.sha256(f"revoke:{subscription_id}".encode()).hexdigest()
+def _late_revocation(subscription_id: str, salt: str = "") -> bool:
+    h = hashlib.sha256(f"revoke:{salt}:{subscription_id}".encode()).hexdigest()
     return (int(h[:16], 16) / float(1 << 64)) < LATE_REVOCATION_RATE
 
 
@@ -126,6 +137,7 @@ def _attempt(
     fc: FailureClass,
     at: datetime,
     attempt_index: int,
+    salt: str = "",
 ) -> bool:
     """Simulate one debit. Shared draw, arm-dependent timing.
 
@@ -160,7 +172,7 @@ def _attempt(
         hours_since_failure=(at - rec.last_attempt_at).total_seconds() / 3600.0,
         days_to_replenish=days_to_replenish(at, rec.salary_day),
     )
-    return _draw(rec.subscription_id, attempt_index) < p
+    return _draw(rec.subscription_id, attempt_index, salt) < p
 
 
 def run_batch(
@@ -172,6 +184,9 @@ def run_batch(
     policy: RecoveryPolicy | None = None,
     use_llm: bool = False,
     diagnoses: list[Diagnosis] | None = None,
+    disabled_rules: frozenset[int] = frozenset(),
+    timing: str = "optimal",
+    draw_salt: str = "",
 ) -> BatchResult:
     """Run one arm over the batch, writing every decision to the ledger.
 
@@ -207,7 +222,7 @@ def run_batch(
         reason = ""
 
         if arm == "sequencer":
-            decision = decide(rec, fc, now)
+            decision = decide(rec, fc, now, disabled_rules=disabled_rules)
             ledger.append(run_id=run_id, arm=arm, event="decision",
                           verdict=decision.verdict, subscription_id=rec.subscription_id,
                           action=decision.action.value, failure_class=fc.value,
@@ -219,7 +234,14 @@ def run_batch(
                     attempts_preserved=rec.attempts_remaining,
                     terminal_reason=decision.verdict))
                 continue
-            schedule = _sequencer_schedule(rec, fc, now, decision)
+            schedule = (
+                _sequencer_schedule(rec, fc, now, decision)
+                if timing == "optimal"
+                # Attribution variant: keep the sequencer's refusals but
+                # borrow the baseline's naive schedule, so the value of
+                # WHEN can be separated from the value of WHETHER.
+                else _baseline_schedule(rec, now)
+            )
         else:
             schedule = _baseline_schedule(rec, now)
             ledger.append(run_id=run_id, arm=arm, event="decision",
@@ -239,15 +261,15 @@ def run_batch(
                 break
 
             # Action boundary. State may have changed since the decision.
-            if arm == "sequencer" and _late_revocation(rec.subscription_id):
+            if arm == "sequencer" and _late_revocation(rec.subscription_id, draw_salt):
                 reason = ("stopped at execution: mandate revoked after the decision "
                           "was made — attempt preserved by the pre-flight re-check")
                 ledger.append(run_id=run_id, arm=arm, event="preflight_refusal",
                               verdict=reason, subscription_id=rec.subscription_id)
                 break
 
-            ok = _attempt(rec, fc, at, attempt_index)
-            if arm == "baseline" and _late_revocation(rec.subscription_id):
+            ok = _attempt(rec, fc, at, attempt_index, draw_salt)
+            if arm == "baseline" and _late_revocation(rec.subscription_id, draw_salt):
                 # No re-check: the debit is attempted against a dead mandate.
                 ok = False
 

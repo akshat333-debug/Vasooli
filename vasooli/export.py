@@ -42,7 +42,13 @@ def _arm_payload(res: BatchResult, records: list[AtRiskRecord]) -> dict[str, Any
         "value_recovered_paise": res.value_recovered_paise,
         "recovered_within_envelope_paise": within,
         "recovered_above_cap_paise": over,
+        # Raw basis (includes above-cap debits) and compliance-adjusted
+        # basis. The adjusted one is the claim; both are exported so a
+        # reader can check one against the other.
         "paise_per_attempt": res.paise_per_attempt,
+        "adjusted_paise_per_attempt": (
+            within / res.attempts_spent if res.attempts_spent else 0.0
+        ),
         "outcomes": [o.model_dump(mode="json") for o in res.outcomes],
     }
 
@@ -62,9 +68,9 @@ def build_payload(
     by_diag = {d.subscription_id: d for d in diagnoses}
 
     baseline = run_batch(records, arm="baseline", now=BATCH_NOW, ledger=ledger,
-                         diagnoses=diagnoses)
+                         diagnoses=diagnoses, draw_salt=str(seed))
     sequencer = run_batch(records, arm="sequencer", now=BATCH_NOW, ledger=ledger,
-                          diagnoses=diagnoses)
+                          diagnoses=diagnoses, draw_salt=str(seed))
 
     bl_out = {o.subscription_id: o for o in baseline.outcomes}
     sq_out = {o.subscription_id: o for o in sequencer.outcomes}

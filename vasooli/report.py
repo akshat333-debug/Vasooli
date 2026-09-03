@@ -95,7 +95,14 @@ def render(
         f"{sequencer.attempts_spent - baseline.attempts_spent:>16}")
     add(f"  {'wasted attempts':22}{baseline.wasted_attempts:>16}{sequencer.wasted_attempts:>16}"
         f"{sequencer.wasted_attempts - baseline.wasted_attempts:>16}")
-    bpa, spa = baseline.paise_per_attempt, sequencer.paise_per_attempt
+    # Per-attempt must use the SAME basis as the row above it. This section is
+    # compliance-adjusted, so the numerator excludes debits outside the
+    # unattended envelope for both arms. Dividing raw recovery by attempts here
+    # -- which is what this line used to do -- credited the baseline with the
+    # very debit the row above had just removed, mixing two bases inside one
+    # table and understating the gap.
+    bpa = (b_in / baseline.attempts_spent) if baseline.attempts_spent else 0.0
+    spa = (s_in / sequencer.attempts_spent) if sequencer.attempts_spent else 0.0
     add(f"  {'recovered / attempt':22}{_rs(bpa):>16}{_rs(spa):>16}{_rs(spa - bpa):>16}")
     add("")
     add("  Headline metric is recovery per attempt, because the retry budget is")
@@ -109,6 +116,11 @@ def render(
         f"  (of which {_rs(b_over)} came from debits above the RBI standard cap)")
     add(f"  sequencer recovered {_rs(sequencer.value_recovered_paise)}"
         f"  (of which {_rs(s_over)} came from debits above the RBI standard cap)")
+    rb = baseline.paise_per_attempt
+    rs_ = sequencer.paise_per_attempt
+    add(f"  raw recovered / attempt: baseline {_rs(rb)}, sequencer {_rs(rs_)}")
+    add("  (both numerators include above-cap debits; shown so the adjusted")
+    add("   headline above can be checked against the unadjusted figures)")
     if b_over > s_over:
         add("")
         add("  NOTE: the baseline's raw total is higher only because it made")

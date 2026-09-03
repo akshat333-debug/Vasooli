@@ -31,13 +31,13 @@ rm -f vasooli.db && uv run vasooli seed && uv run vasooli run && uv run vasooli 
 
 > Two arms over the identical batch. Baseline: fixed schedule, retries everything. Sequencer: diagnoses first, then decides.
 >
-> Baseline spends 154 attempts. Sequencer spends 71 and recovers more — ₹1,012 per attempt against ₹635. Fifty-nine percent better on the metric that matters, because attempts are the scarce thing.
+> Baseline spends 165 attempts. Sequencer spends 77 and recovers more — ₹765 per attempt against ₹349. That is 119% better on the metric that matters, because attempts are the scarce thing.
 
 **Scroll to RAW TOTALS.**
 
 > Now the part I want to be honest about, because it's the most interesting thing I found.
 >
-> On raw totals the baseline looks like it wins — ₹97,000 against ₹71,000. I dug into where that came from. Thirty-one thousand rupees of it is one debit above the RBI standard cap. That's a debit automation is not allowed to make on its own.
+> On raw totals the baseline wins on both axes — ₹131,000 against ₹59,000, and more per attempt too. I dug into where that came from. Seventy-three thousand rupees of it is two debits above the RBI standard cap. Those are debits automation is not allowed to make on its own.
 >
 > That's not revenue. That's a compliance failure with a recovery number painted on it. Strip that single action and the ranking flips on both axes.
 >
@@ -45,11 +45,19 @@ rm -f vasooli.db && uv run vasooli seed && uv run vasooli run && uv run vasooli 
 
 **Scroll to the exception list.**
 
-> Sixty-four of a hundred records unrecovered, every one listed with why. Two hundred thousand rupees still at risk. I'm not hiding that — and 75 retry attempts were preserved by refusing to act, which is the number this thing is actually optimising.
+> Seventy-five of a hundred records unrecovered, every one listed with why. Two hundred and nineteen thousand rupees still at risk. I'm not hiding that — and 86 retry attempts were preserved by refusing to act, which is the number this thing is actually optimising.
 
 **`uv run vasooli demo-trip`** — breaker halts a run.
 
-**`uv run vasooli verify-ledger`** — chain intact (row count printed live). Then tamper one row and re-run to show it locating the break.
+**`uv run vasooli experiments`** — the part that makes it defensible.
+
+> One seed proves nothing, so I ran forty. The sequencer led in forty of forty, median +126%.
+>
+> Then I tried to break my own thesis. My claim was that timing retries around payday is what pays. So I closed the payday gap to zero — removed every reason for timing to matter — and the advantage barely moved.
+>
+> That meant my story was wrong. I decomposed it: refusing doomed attempts is 83% of the gain, timing is 17%. The most elaborate part of my engine is the smaller half. I changed the README to say so, because the alternative is letting the clever machinery take credit for the simple idea's work.
+
+**`uv run vasooli verify-ledger`** — chain intact. Then tamper one row and re-run to show it locating the break.
 
 ## 2:05–3:10 — Architecture and the AI choices
 

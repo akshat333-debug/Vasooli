@@ -34,30 +34,30 @@ That reframing is the whole project. Not *retry harder* — **allocate three att
 
 |  | baseline | sequencer | delta |
 |---|---:|---:|---:|
-| Recovered | ₹66,767.00 | **₹71,864.00** | +₹5,097.00 |
-| Attempts spent | 154 | **71** | −83 |
-| Wasted attempts | 120 | **35** | −85 |
-| **Recovered per attempt** | ₹635.14 | **₹1,012.17** | **+59.4%** |
+| Recovered | ₹57,571.00 | **₹58,875.00** | +₹1,304.00 |
+| Attempts spent | 165 | **77** | −88 |
+| Wasted attempts | 134 | **52** | −82 |
+| **Recovered per attempt** | ₹348.92 | **₹764.61** | **+119.1%** |
 
 The headline metric is **recovery per attempt**, not gross recovery, because the retry budget is the scarce resource.
 
-### Why the raw totals disagree — and why that matters
+### The baseline wins on the raw numbers. It wins by breaking a rule.
 
-On raw totals the baseline appears to win: ₹97,812 against ₹71,864.
+Unadjusted, the baseline beats the sequencer on *both* axes — ₹131,224 against ₹58,875 in total, and ₹795.30 against ₹764.61 per attempt.
 
-₹31,045.08 of the baseline's total came from **a single unattended debit above the RBI standard cap** — a debit automation is not permitted to make alone. That is not revenue a merchant can bank. It is a compliance failure wearing a recovery number's clothes.
+₹73,653.24 of the baseline's total came from **unattended debits above the RBI e-mandate standard cap of ₹15,000** — debits automation is not permitted to make alone. That is not revenue a merchant can bank. Remove those two actions and the ranking inverts decisively on both axes.
 
-Strip that one action out and the ranking inverts on both axes. **The naive system only beats the bounded one by doing something it isn't allowed to do.** That is the most useful thing this project found, and it is the reason the report prints raw and adjusted figures side by side instead of quietly picking the flattering one.
+Both bases are printed side by side in [`BATCH_REPORT.txt`](BATCH_REPORT.txt) so the adjusted headline can be checked against the unadjusted figures. Picking whichever was flattering would have been easy and is the whole thing this project is against.
 
-### Honest exception list — 64 of 100 records unrecovered, ₹205,958.71 still at risk
+### Honest exception list — 75 of 100 records unrecovered, ₹218,947.71 still at risk
 
 | Count | Value | Reason |
 |---:|---:|---|
-| 15 | ₹20,885.00 | all available attempts spent without recovery |
+| 22 | ₹29,378.00 | all available attempts spent without recovery |
 | 13 | ₹21,587.00 | retry budget already exhausted on arrival |
+| 9 | ₹11,891.00 | mandate revoked *after* the decision — caught at execution |
 | 9 | ₹17,591.00 | `MANDATE_REVOKED` |
 | 5 | ₹3,495.00 | mandate revoked despite an `INSUFFICIENT_FUNDS` failure |
-| 5 | ₹7,395.00 | mandate revoked *after* the decision — caught at execution |
 | 5 | ₹4,195.00 | `LIMIT_EXCEEDED` |
 | 4 | ₹6,396.00 | `MANDATE_EXPIRED` |
 | 3 | ₹1,497.00 | unclassifiable by dict or model → human |
@@ -65,9 +65,54 @@ Strip that one action out and the ranking inverts on both axes. **The naive syst
 | 2 | ₹73,653.24 | above the RBI standard cap → human |
 | 1 | ₹299.00 | above the mandate's own cap → human |
 
-**75 retry attempts were preserved by refusing to act.** That is the number the project is actually optimising, and it is invisible in any report that only counts wins.
+**86 retry attempts were preserved by refusing to act.** That is the number the project is actually optimising, and it is invisible in any report that only counts wins.
 
-Full report: [`BATCH_REPORT.txt`](BATCH_REPORT.txt). Regenerate with `uv run vasooli run`.
+---
+
+## Does the claim survive scrutiny?
+
+One seed proves nothing. `uv run vasooli experiments` runs five checks against the result; full output in [`EXPERIMENTS.txt`](EXPERIMENTS.txt).
+
+### It is not an artefact of seed 42
+
+Across **40 independent seeds**, the sequencer led on recovery-per-attempt in **40 of 40**. Median **+126.2%**, 5th percentile **+68.6%**, worst seed **+52.2%**. No losing seeds — and if there had been, they would be listed, because the sweep publishes them.
+
+### Most of the advantage is refusal, not timing — and the project used to imply otherwise
+
+This is the finding that changed how the project describes itself.
+
+Three arms over identical records and draws: **A** the baseline, **B** the sequencer's stopping rules with the baseline's naive schedule, **C** the full sequencer. `B − A` is what refusing is worth; `C − B` is what timing is worth.
+
+| Arm | Per attempt |
+|---|---:|
+| A — baseline | ₹283.24 |
+| B — refusals only, naive timing | ₹589.47 |
+| C — refusals + optimal timing | ₹652.99 |
+
+**83% of the gain comes from refusing doomed attempts. 17% comes from timing them well.**
+
+The grid search over the payday cycle is the most elaborate part of this engine and it is the smaller half by a wide margin. The dominant mechanism is the boring one: *don't spend an attempt that cannot succeed.* Saying so plainly is worth more than letting the interesting machinery take credit for the simple idea's work.
+
+Confirming it independently: closing the assumed payday gap to **zero** — removing every reason for timing to matter — still leaves the sequencer ahead by +147% at a 100% win rate. If timing were doing the work, that should have collapsed it.
+
+### Every stopping rule was priced
+
+Each rule switched off in turn, averaged across seeds:
+
+| Rule | Attempts | Wasted | Above cap |
+|---|---:|---:|---:|
+| all rules on | 76.3 | 44.2 | ₹0 |
+| 1 — retry budget exhausted | 81.7 | 47.4 | ₹0 |
+| 2 — terminal failure class | 81.2 | 49.1 | ₹0 |
+| 3 — mandate not active | **84.8** | **52.6** | ₹0 |
+| 4 — failure unclassified | 81.7 | 49.5 | ₹0 |
+| 5 — above the mandate's own cap | 83.6 | 51.5 | ₹0 |
+| 6 — above the RBI standard cap | 82.3 | 47.5 | **₹86,599** |
+| 7 — mandate expires before notice | 76.3 | 44.2 | ₹0 |
+
+Rule 3 is the most expensive to remove. Rule 6 is the only one whose removal produces debits outside the compliance envelope — it is doing exactly the job it exists for.
+
+**Rule 7 changes nothing on this data**, and that is reported rather than quietly dropped. No record in these seeds has a mandate expiring inside the notice window. It is kept because it prevents a real and expensive mistake — the audit that found it caught the scheduler placing a retry six days past expiry — and a rule that guards a rare catastrophe still earns its place. But it has not been exercised by a batch, only by a test.
 
 ---
 
@@ -211,7 +256,13 @@ The four above were found while building. After the project "worked", I ran a de
 
 **On RunFuse specifically:** I tested it in isolation against this gateway before assuming it was at fault. `max_steps` trips precisely at the boundary, step counting is exact, and the `$0` cost accounting is a pricing-table gap on an unrecognised model name, not a logic error. **RunFuse was correct; Vasooli's containment of it was not.** That distinction is the whole lesson — a dependency being right does not make your use of it safe.
 
-The through-line across all ten: nearly every one was something that *looked* like it was working. Three were guardrails that were themselves the hazard. That is what the audit trail, the arm comparison, and a deliberate adversarial audit are for — and it is why "it runs and the tests pass" was not where I stopped.
+**11. A 40-seed sweep shared one set of 40 seeds' worth of luck.** `generate_batch` reuses the same subscription ids for every seed, and the outcome draw was keyed only on that id — so every seed in a sweep drew the *same* 300 luck values. The seed varied which failure sat in each slot, not whether the slot got lucky. Within a single comparison this was harmless, since both arms still shared the draw and the fairness property held. But it meant the sweep built to prove the result was not seed-dependent was itself far less independent than "40 seeds" implied. The draw is now salted with the batch seed, which changed the headline figures — reported above.
+
+**12. The compliance-adjusted headline had a raw number in it.** The table is labelled *compliance-adjusted* and its "recovered" row excludes above-cap debits, but its "recovered / attempt" row divided *raw* recovery by attempts — putting the very debits the row above had just removed back into the baseline's numerator. Two bases inside one table. Fixed to a single basis, with the raw per-attempt figures printed in the raw section so both can be checked.
+
+**13. The project's stated mechanism was mostly not the mechanism.** The sensitivity sweep was built expecting the advantage to collapse once the payday gap closed. It did not — it barely moved. The attribution that followed showed refusal doing 83% of the work and timing 17%. Nothing was broken in the code; what was wrong was the story being told about it, which leaned on the elaborate part rather than the part that pays. The README now leads with refusal.
+
+The through-line across all thirteen: nearly every one was something that *looked* like it was working. Three were guardrails that were themselves the hazard, and one was a story that outran its evidence. That is what the audit trail, the arm comparison, and a deliberate adversarial audit are for — and it is why "it runs and the tests pass" was not where I stopped.
 
 ---
 
@@ -271,6 +322,7 @@ uv run vasooli run
 | `vasooli run` | Both arms + the compliance-adjusted report |
 | `vasooli demo-trip` | Show the batch breaker halting a run mid-flight |
 | `vasooli live` | Probe the real Razorpay test API and create test Orders |
+| `vasooli experiments` | Seed sweep, attribution, ablation, calibration |
 | `vasooli export` | Emit the batch as JSON for the interface |
 | `vasooli verify-ledger` | Recompute the audit hash chain |
 
@@ -296,6 +348,7 @@ vasooli/
 ├── report.py             compliance-adjusted report + exception list
 ├── razorpay_adapter.py   test-mode only; capability-probed
 ├── export.py            serialises a real run for the interface
+├── experiments.py       sweep, attribution, ablation, calibration
 └── sim/
     ├── model.py          the assumptions, as named constants
     └── seed.py           seeded batch with three hazards built in

@@ -158,15 +158,31 @@ def best_retry_time(
     return best_at, best_p
 
 
-def decide(rec: AtRiskRecord, failure_class: FailureClass, now: datetime) -> Decision:
-    """Apply the stopping rules, then schedule. See module docstring for order."""
+def decide(
+    rec: AtRiskRecord,
+    failure_class: FailureClass,
+    now: datetime,
+    *,
+    disabled_rules: frozenset[int] = frozenset(),
+) -> Decision:
+    """Apply the stopping rules, then schedule. See module docstring for order.
+
+    `disabled_rules` exists for ablation only (see experiments.py): switching a
+    rule off and re-running measures what that rule is actually worth, in wasted
+    attempts and rupees. It is never used in a real run — a rule that can be
+    turned off by an argument is a rule that can be turned off by accident, so
+    the default is empty and every caller in the engine leaves it alone.
+    """
 
     def d(rule: int, action: Action, verdict: str, **kw) -> Decision:
         return Decision(subscription_id=rec.subscription_id, action=action,
                         verdict=verdict, rule_fired=rule, **kw)
 
+    def on(rule: int) -> bool:
+        return rule not in disabled_rules
+
     # 1. The budget is gone. Attempting anything here halts the subscription.
-    if rec.attempts_remaining <= 0:
+    if on(1) and rec.attempts_remaining <= 0:
         return d(
             1,
             Action.STOP_EXHAUSTED,
@@ -176,7 +192,7 @@ def decide(rec: AtRiskRecord, failure_class: FailureClass, now: datetime) -> Dec
         )
 
     # 2. The failure class makes a retry pointless.
-    if is_terminal(failure_class):
+    if on(2) and is_terminal(failure_class):
         return d(
             2,
             Action.STOP_TERMINAL,
@@ -186,7 +202,7 @@ def decide(rec: AtRiskRecord, failure_class: FailureClass, now: datetime) -> Dec
         )
 
     # 3. The mandate itself is dead, whatever the error text implied.
-    if rec.mandate_status is not MandateStatus.ACTIVE:
+    if on(3) and rec.mandate_status is not MandateStatus.ACTIVE:
         return d(
             3,
             Action.STOP_TERMINAL,
@@ -196,7 +212,7 @@ def decide(rec: AtRiskRecord, failure_class: FailureClass, now: datetime) -> Dec
         )
 
     # 4. Nobody could classify it. Do not guess with someone's money.
-    if failure_class is FailureClass.UNKNOWN:
+    if on(4) and failure_class is FailureClass.UNKNOWN:
         return d(
             4,
             Action.HUMAN_REVIEW,
@@ -205,7 +221,7 @@ def decide(rec: AtRiskRecord, failure_class: FailureClass, now: datetime) -> Dec
         )
 
     # 5. The debit is larger than the mandate permits. It cannot succeed.
-    if rec.exceeds_mandate_cap:
+    if on(5) and rec.exceeds_mandate_cap:
         return d(
             5,
             Action.HUMAN_REVIEW,
@@ -214,7 +230,7 @@ def decide(rec: AtRiskRecord, failure_class: FailureClass, now: datetime) -> Dec
         )
 
     # 6. Above the RBI standard cap, automation does not act alone.
-    if rec.needs_human_approval:
+    if on(6) and rec.needs_human_approval:
         return d(
             6,
             Action.HUMAN_REVIEW,
@@ -227,7 +243,7 @@ def decide(rec: AtRiskRecord, failure_class: FailureClass, now: datetime) -> Dec
     #    at all, and scheduling into that gap would spend an attempt on a debit
     #    the bank will reject — the precise mistake this engine exists to avoid.
     at, p = best_retry_time(rec, failure_class, now)
-    if at is None:
+    if on(7) and at is None:
         return d(
             7,
             Action.STOP_TERMINAL,
@@ -239,6 +255,12 @@ def decide(rec: AtRiskRecord, failure_class: FailureClass, now: datetime) -> Dec
         )
 
     # 8. Eligible. Spend the attempt at its best moment.
+    if at is None:
+        # Only reachable with rule 7 ablated. There is no lawful moment, so the
+        # ablation must still not invent one — it schedules at the floor and the
+        # simulator rejects the debit, which is exactly the cost being measured.
+        at = earliest_legal_retry(rec, now)
+        p = 0.0
     waited = (at - now).total_seconds() / 3600.0
     return d(
         8,
