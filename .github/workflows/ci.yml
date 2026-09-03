@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  engine:
+    name: engine — tests, lint, coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install
+        run: uv pip install --system -e ".[dev]"
+
+      - name: Lint
+        run: uvx ruff check vasooli tests
+
+      # No credentials are provided to CI on purpose. The suite is hermetic —
+      # it must pass with no API key, no gateway and no network. If a test ever
+      # starts needing one of those, this job is where it should fail.
+      - name: Tests with coverage
+        run: |
+          coverage run -m pytest -q
+          coverage report --fail-under=90
+
+      - name: Batch runs end to end
+        run: |
+          python -m vasooli.cli run --no-llm
+          python -m vasooli.cli verify-ledger
+          python -m vasooli.cli experiments --seeds 5 -n 40
+
+  web:
+    name: web — typecheck and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npx next build

@@ -74,7 +74,10 @@ export interface Arm {
   value_recovered_paise: number;
   recovered_within_envelope_paise: number;
   recovered_above_cap_paise: number;
+  /** Raw basis: includes above-cap debits. Shown for checking only. */
   paise_per_attempt: number;
+  /** Compliance-adjusted basis. This is the one the headline uses. */
+  adjusted_paise_per_attempt: number;
   outcomes: {
     subscription_id: string;
     amount_paise: number;

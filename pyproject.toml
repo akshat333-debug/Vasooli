@@ -12,7 +12,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "coverage>=7.6"]
 razorpay = ["razorpay>=1.4"]
 
 [project.scripts]
@@ -31,3 +31,15 @@ testpaths = ["tests"]
 # add ambiguity to a value whose whole purpose is to be identical on every run.
 # The one real timestamp (ledger row time) does use timezone-aware UTC.
 ignore = ["DTZ001", "C408", "RUF015"]
+
+[tool.coverage.run]
+source = ["vasooli"]
+omit = ["vasooli/cli.py"]
+
+[tool.coverage.report]
+# cli.py is argument plumbing and print statements, exercised end to end by the
+# CI "batch runs end to end" step rather than by unit tests. Everything that
+# makes a decision about money is in scope here.
+show_missing = true
+skip_covered = true
+exclude_lines = ["pragma: no cover", "if __name__ == .__main__.:"]

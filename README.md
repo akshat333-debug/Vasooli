@@ -330,7 +330,7 @@ uv run vasooli run
 uv run pytest
 ```
 
-90 tests. Hermetic — no network, no API keys, no gateway required.
+114 tests, 93% coverage on the engine. Hermetic — no network, no API keys, no gateway required.
 
 ---
 

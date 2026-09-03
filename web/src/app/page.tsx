@@ -7,8 +7,13 @@ export default function BatchPage() {
   const bl = arms.baseline;
   const sq = arms.sequencer;
 
-  const perAttemptGain =
-    ((sq.paise_per_attempt - bl.paise_per_attempt) / bl.paise_per_attempt) * 100;
+  // Compliance-adjusted on BOTH sides. Using the raw figures here would put
+  // the above-cap debits back into the baseline's numerator while the recovered
+  // row beside it excludes them — two bases in one comparison, which is the
+  // exact bug this was caught making in the text report.
+  const blPer = bl.adjusted_paise_per_attempt;
+  const sqPer = sq.adjusted_paise_per_attempt;
+  const perAttemptGain = ((sqPer - blPer) / blPer) * 100;
   const attemptsSaved = bl.attempts_spent - sq.attempts_spent;
   const preserved = sq.outcomes
     .filter((o) => !o.recovered)
@@ -50,9 +55,9 @@ export default function BatchPage() {
         <Stat
           tone="sage"
           label="Recovered per attempt"
-          value={rupees(Math.round(sq.paise_per_attempt))}
+          value={rupees(Math.round(sqPer))}
           delta={`+${perAttemptGain.toFixed(0)}% vs baseline`}
-          note={`Baseline ${rupees(Math.round(bl.paise_per_attempt))}. The retry budget is the scarce resource, so this is the number that matters.`}
+          note={`Baseline ${rupees(Math.round(blPer))}, compliance-adjusted on both sides. The retry budget is the scarce resource, so this is the number that matters.`}
         />
         <Stat
           tone="periwinkle"
