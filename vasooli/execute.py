@@ -48,6 +48,7 @@ from pydantic import BaseModel
 from .decide import Action, Decision, days_to_replenish, decide, earliest_legal_retry
 from .diagnose import diagnose_batch
 from .ledger import Ledger
+from .logging import event
 from .models import AtRiskRecord, Diagnosis, MandateStatus
 from .policy import RecoveryFuse, RecoveryPolicy, RecoveryTripped
 from .sim.model import success_probability
@@ -314,6 +315,11 @@ def run_batch(
         attempts_spent=attempts_spent, wasted_attempts=wasted,
         soft_warnings=fuse.state.soft_warnings, tripped=tripped)
 
+    event("execute.batch_complete", arm=arm, run_id=run_id,
+          records=len(records), processed=len(outcomes),
+          attempts=attempts_spent, wasted=wasted,
+          recovered_paise=fuse.state.value_recovered_paise,
+          tripped=bool(tripped))
     ledger.append(run_id=run_id, arm=arm, event="batch_end",
                   verdict=(f"finished — ₹{result.value_recovered_paise / 100:,.2f} recovered "
                            f"from {attempts_spent} attempt(s)"),

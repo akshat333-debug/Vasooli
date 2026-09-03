@@ -12,7 +12,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "coverage>=7.6"]
+dev = ["pytest>=8.0", "coverage>=7.6", "hypothesis>=6.100"]
 razorpay = ["razorpay>=1.4"]
 
 [project.scripts]

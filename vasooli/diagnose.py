@@ -38,6 +38,7 @@ from typing import Any
 from openai import OpenAI
 from runfuse import Fuse, FusePolicy, FuseTripped
 
+from .logging import problem, timed
 from .models import AtRiskRecord, Diagnosis
 from .taxonomy import FailureClass, classify_by_code
 
@@ -189,6 +190,7 @@ def diagnose_batch(
             stats["degraded"] = 1
             stats["degraded_reason"] = str(e)[:200]
             client, fuse = None, None
+            problem("diagnose.degraded", reason=str(e)[:200])
 
     # Seeded sample of mapped records to score the model against the dict.
     mapped = [r.subscription_id for r in records
@@ -255,7 +257,7 @@ def diagnose_batch(
 
     if fuse:
         try:
-            with fuse.run("diagnose-batch"):
+            with fuse.run("diagnose-batch"), timed("diagnose.batch", records=len(records)):
                 out = [_run(r) for r in records]
         except Exception as e:  # noqa: BLE001 - containment boundary
             # A RunFuse trip or internal fault must not destroy the batch. The
@@ -268,6 +270,8 @@ def diagnose_batch(
             # cannot name becomes human review.
             stats["fuse_aborted"] = 1
             stats["fuse_reason"] = str(e)[:200]
+            problem("diagnose.fuse_aborted", reason=str(e)[:200],
+                    classified_before_trip=len(out))
             done = {d.subscription_id for d in out}
             client = None  # force the dict-only path in _run
             out = out + [_run(r) for r in records if r.subscription_id not in done]

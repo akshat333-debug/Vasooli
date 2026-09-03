@@ -272,6 +272,18 @@ Plus batch-level ceilings on actions and total value, with a soft warning at 80%
 
 Every rule has a test that fails if the rule is deleted (`tests/test_decide.py`). A stopping rule that is silently removed does not crash anything — it just starts spending retries on debits that cannot succeed, and the only symptom is a slightly worse number in a report nobody re-derives.
 
+### Webhooks: the same engine, a different door
+
+`webhook.py` turns a Razorpay `payment.failed` or `subscription.halted` into the same `AtRiskRecord` the batch uses, and hands it to the same rules. There is no webhook-specific decision path, because a second path for one decision is a second place for it to drift.
+
+The module's job is verifying, deduplicating and refusing:
+
+- **Signature before parsing.** An unverified payload is not data, it is an attacker's suggestion. Compared with `compare_digest`, never `==` — a naive comparison returns faster on an earlier mismatch and leaks the signature a byte at a time.
+- **Replays rejected.** Razorpay retries deliveries. A replayed `payment.failed` counted twice would spend a retry from a budget of three on one real failure.
+- **Missing information never widens the envelope.** No `max_amount` in the event means the cap defaults to the amount itself, so anything larger is refused rather than assumed permitted. No notice can be inferred from an event, so the engine schedules as though none was sent.
+
+Nothing in a payload can raise a cap, skip a rule or schedule a debit. The event supplies facts; `decide.py` decides — and a test asserts the module never calls into the execution path.
+
 ### On the audit trail, honestly
 
 The chain is keyed with HMAC-SHA256, not a plain hash. A plain chain detects an accidental edit and nothing else — anyone who can write to the database can recompute every subsequent hash and the result verifies clean, which protects against corruption but not against the insider an audit trail exists for. With `VASOOLI_LEDGER_KEY` set, forging the chain needs the key as well as write access.
@@ -394,7 +406,7 @@ uv run vasooli run
 uv run pytest
 ```
 
-157 tests, 93% coverage on the engine. Hermetic — no network, no API keys, no gateway required.
+182 tests, 93% coverage on the engine. Hermetic — no network, no API keys, no gateway required.
 
 ---
 
@@ -416,6 +428,8 @@ vasooli/
 ├── nudge.py             Hinglish drafting, guardrailed, never sends
 ├── promise.py           promise-to-pay; may only move a retry later
 ├── bandit.py            learned timing — an experiment, and a negative one
+├── webhook.py           Razorpay ingestion; verifies, dedupes, decides nothing
+├── logging.py           operational JSON logs; silent unless VASOOLI_LOG is set
 └── sim/
     ├── model.py          the assumptions, as named constants
     └── seed.py           seeded batch with three hazards built in
