@@ -98,7 +98,7 @@ class Ingested:
     note: str
 
 
-def _utc_naive(epoch: int | float) -> datetime:
+def _utc_naive(epoch: float) -> datetime:
     """Razorpay sends UTC Unix timestamps.
 
     `fromtimestamp()` without a timezone reads them in LOCAL time, which would
