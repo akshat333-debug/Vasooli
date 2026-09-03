@@ -1,5 +1,6 @@
 import AttemptLedger from "@/components/AttemptLedger";
 import ExceptionList from "@/components/ExceptionList";
+import Scenarios from "@/components/Scenarios";
 import { batch, rupees } from "@/lib/data";
 
 export default function BatchPage() {
@@ -114,11 +115,15 @@ export default function BatchPage() {
       </section>
 
       <div className="rise mb-8" style={{ animationDelay: "240ms" }}>
+        <Scenarios scenarios={batch.scenarios} />
+      </div>
+
+      <div className="rise mb-8" style={{ animationDelay: "300ms" }}>
         <ExceptionList records={records} />
       </div>
 
       {/* ---- Provenance ---- */}
-      <section className="rise grid gap-4 md:grid-cols-2" style={{ animationDelay: "300ms" }}>
+      <section className="rise grid gap-4 md:grid-cols-2" style={{ animationDelay: "360ms" }}>
         <div className="rounded-2xl border border-rule bg-paper-raised p-6">
           <p className="eyebrow mb-3">Audit trail</p>
           <div className="flex items-baseline gap-2.5">

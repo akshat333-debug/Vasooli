@@ -173,6 +173,7 @@ def build_payload(
             "entries": entries,
         },
         "llm": llm_stats,
+        "scenarios": build_scenarios(n, seed),
     }
 
 
@@ -181,3 +182,77 @@ def write_payload(path: str | Path, **kwargs: Any) -> Path:
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(build_payload(**kwargs), indent=2))
     return p
+
+
+#: Policy variations worth showing side by side. Each is a REAL engine run, not
+#: a projection — the interface must never compute a scenario the engine did not
+#: actually produce, which is the same boundary every other number here respects.
+SCENARIOS: list[dict[str, Any]] = [
+    {
+        "id": "default",
+        "name": "As shipped",
+        "note": "Every stopping rule on, ceilings sized above the batch.",
+        "policy": {},
+        "disabled_rules": [],
+    },
+    {
+        "id": "no_compliance_rule",
+        "name": "Without the RBI cap rule",
+        "note": "Rule 6 off. The only change that produces debits outside the "
+                "unattended envelope.",
+        "policy": {},
+        "disabled_rules": [6],
+    },
+    {
+        "id": "no_mandate_check",
+        "name": "Without the dead-mandate check",
+        "note": "Rule 3 off. The most expensive rule to remove, measured in "
+                "wasted attempts.",
+        "policy": {},
+        "disabled_rules": [3],
+    },
+    {
+        "id": "tight_breaker",
+        "name": "Breaker set to 40 actions",
+        "note": "The batch stops mid-run. Included so the truncation warning is "
+                "visible rather than described.",
+        "policy": {"max_actions_per_batch": 40},
+        "disabled_rules": [],
+    },
+]
+
+
+def build_scenarios(n: int = 100, seed: int = 42) -> list[dict[str, Any]]:
+    """Run each policy variation for real and summarise it."""
+    from .policy import RecoveryPolicy
+
+    records = generate_batch(n, seed=seed)
+    diagnoses, _ = diagnose_batch(records, use_llm=False)
+    out: list[dict[str, Any]] = []
+
+    for sc in SCENARIOS:
+        ledger = Ledger(":memory:")
+        policy = RecoveryPolicy(**sc["policy"]) if sc["policy"] else None
+        res = run_batch(
+            records, arm="sequencer", now=BATCH_NOW, ledger=ledger,
+            diagnoses=diagnoses, policy=policy,
+            disabled_rules=frozenset(sc["disabled_rules"]),
+            draw_salt=str(seed),
+        )
+        ledger.close()
+        within, over = compliance_split(res, records)
+        out.append({
+            "id": sc["id"], "name": sc["name"], "note": sc["note"],
+            "disabled_rules": sc["disabled_rules"],
+            "attempts_spent": res.attempts_spent,
+            "wasted_attempts": res.wasted_attempts,
+            "recovered_within_envelope_paise": within,
+            "recovered_above_cap_paise": over,
+            "adjusted_paise_per_attempt": (
+                within / res.attempts_spent if res.attempts_spent else 0.0
+            ),
+            "records_processed": res.records_processed,
+            "truncated": res.truncated,
+            "tripped": res.tripped,
+        })
+    return out

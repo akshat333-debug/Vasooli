@@ -89,7 +89,21 @@ function Row({
         </div>
       </div>
 
+      {/* Three hundred coloured squares carry the argument visually and
+          nothing at all to a screen reader, so the same facts are stated in
+          text. The grid itself is then hidden from the accessibility tree
+          rather than read out as 300 anonymous divs. */}
+      <p className="sr-only">
+        {label}: {spent} of {cells.length} available retry attempts were spent,
+        {" "}{cells.filter((c) => c.state === "recovered").length} of which
+        recovered the money. {cells.filter((c) => c.state === "preserved").length}
+        {" "}attempts were preserved, and{" "}
+        {cells.filter((c) => c.state === "prespent").length} had already been
+        spent before this batch began.
+      </p>
+
       <div
+        aria-hidden="true"
         className="attempt-grid grid gap-[2px]"
         onMouseLeave={() => onHover(null)}
       >

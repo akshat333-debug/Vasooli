@@ -101,6 +101,21 @@ export interface LedgerEntry {
   prev_hash: string;
 }
 
+export interface Scenario {
+  id: string;
+  name: string;
+  note: string;
+  disabled_rules: number[];
+  attempts_spent: number;
+  wasted_attempts: number;
+  recovered_within_envelope_paise: number;
+  recovered_above_cap_paise: number;
+  adjusted_paise_per_attempt: number;
+  records_processed: number;
+  truncated: boolean;
+  tripped: string | null;
+}
+
 export interface Batch {
   meta: {
     generated_at: string;
@@ -113,8 +128,11 @@ export interface Batch {
   };
   arms: { baseline: Arm; sequencer: Arm };
   records: BatchRecord[];
+  scenarios: Scenario[];
   ledger: {
     verified: boolean;
+    keyed?: boolean;
+    strength?: string;
     rows: number;
     broken_at: number | null;
     detail: string;

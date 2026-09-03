@@ -360,6 +360,8 @@ Four views:
 | **Audit trail** | The 434 hash-chained rows with chain verification |
 | **Method** | What is real, what is simulated, and every defect found |
 
+The batch page also carries a **policy comparison**: switch off the RBI-cap rule, the dead-mandate check, or tighten the breaker, and see what each costs. Every option is a real engine run rather than a projection — which is why there is no "what if" slider. A slider would have to compute an outcome the engine never produced, and that is the one thing this interface is not allowed to do.
+
 The interface reflects whichever run produced its `batch.json`, including that run's failures — if the model was unreachable, the Method view says so and reports the AI stage as degraded rather than hiding it. Re-sync with `uv run vasooli export`.
 
 ### Why it does not look like a finance dashboard
@@ -375,6 +377,7 @@ So the visual language is inverted where it matters:
 - Colour is semantic and fixed: sage recovered, periwinkle refused, mustard escalated to a person. **Refusal is the product working**, so it is not styled as a loss.
 - Clay red appears **exactly once in the entire application**, on the baseline's single non-compliant debit. Scarcity is what makes it read as an alarm.
 - Every verdict string is set in monospace at readable size. These are machine output and should look like it, not be styled into prose.
+- All text meets WCAG AA (4.5:1 for small text), verified by measurement rather than by eye. The 300-cell attempt grid is `aria-hidden` with a text equivalent beside it, because 300 anonymous divs read aloud is worse than nothing.
 
 ---
 
