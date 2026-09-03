@@ -65,7 +65,7 @@ export default function Scenarios({ scenarios }: { scenarios: Scenario[] }) {
           <p className="mb-4 rounded-lg border border-clay/40 bg-clay-soft/30 px-4 py-3 text-[13px] leading-relaxed">
             <strong className="font-semibold">This run did not finish.</strong> The
             breaker stopped it after {active.records_processed} of 100 records, so
-            its totals are computed over a prefix of the batch. Shown deliberately —
+            its totals are computed over a prefix of the batch. Shown deliberately:
             a truncated run is what the guardrail doing its job looks like, and the
             report refuses to present it as a result.
           </p>
@@ -109,7 +109,7 @@ export default function Scenarios({ scenarios }: { scenarios: Scenario[] }) {
                             : "text-ink-mute"
                       }`}
                     >
-                      {delta === 0 ? "—" : `${delta > 0 ? "+" : "−"}${fmt(Math.abs(delta))}`}
+                      {delta === 0 ? "No change" : `${delta > 0 ? "+" : "−"}${fmt(Math.abs(delta))}`}
                     </td>
                   </tr>
                 );

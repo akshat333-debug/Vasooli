@@ -12,7 +12,9 @@ import { rupees, type BatchRecord } from "@/lib/data";
 
 function groupKey(reason: string) {
   // Verdict strings carry a machine-ish prefix then an em-dash explanation.
-  return reason.split(" — ")[0].split(" - ")[0];
+  // The em-dash here is NOT UI copy: it matches the separator decide.py puts
+  // in its verdict strings. Changing it silently breaks the grouping.
+  return reason.split(" \u2014 ")[0].split(" - ")[0];
 }
 
 export default function ExceptionList({ records }: { records: BatchRecord[] }) {
@@ -36,7 +38,7 @@ export default function ExceptionList({ records }: { records: BatchRecord[] }) {
             {unrecovered.length} of {records.length} records were not recovered.
           </h2>
           <p className="mt-1.5 text-[13.5px] text-ink-mute">
-            {rupees(stillAtRisk)} still at risk. Every one is listed — nothing is
+            {rupees(stillAtRisk)} still at risk. Every one is listed. Nothing is
             filtered out of this view.
           </p>
         </div>

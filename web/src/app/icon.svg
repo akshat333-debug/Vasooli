@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 22 22">
+  <!-- Three attempt slots, one spent. The product in one glyph. -->
+  <rect width="22" height="22" rx="6" fill="#1c1b19"/>
+  <rect x="5" y="6.5" width="3.2" height="9" rx="1.2" fill="#f2efe7"/>
+  <rect x="9.4" y="6.5" width="3.2" height="9" rx="1.2" fill="#f2efe7" opacity="0.3"/>
+  <rect x="13.8" y="6.5" width="3.2" height="9" rx="1.2" fill="#f2efe7" opacity="0.3"/>
+</svg>

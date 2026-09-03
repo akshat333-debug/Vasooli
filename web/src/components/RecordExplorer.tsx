@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
+import { useUrlState } from "@/lib/useUrlState";
 import {
   ACTION_LABEL,
   ACTION_TONE,
@@ -30,13 +31,17 @@ const RULES = [
   { n: 5, test: "Above the mandate's own cap", action: "HUMAN_REVIEW" },
   { n: 6, test: "Above the RBI standard cap", action: "HUMAN_REVIEW" },
   { n: 7, test: "Mandate expires before notice elapses", action: "STOP_TERMINAL" },
-  { n: 8, test: "Eligible — schedule at the best moment", action: "RETRY_SCHEDULED" },
+  { n: 8, test: "Eligible, schedule at the best moment", action: "RETRY_SCHEDULED" },
 ];
 
 export default function RecordExplorer({ records }: { records: BatchRecord[] }) {
-  const [filter, setFilter] = useState<Action | "ALL">("ALL");
-  const [q, setQ] = useState("");
-  const [openId, setOpenId] = useState<string | null>(null);
+  // Filters live in the URL so a filtered view can be linked and shared. The
+  // expanded row does not: which record someone had open is not a view worth
+  // sending anyone, and putting it in the URL would rewrite history on every
+  // click.
+  const [filter, setFilter] = useUrlState("decision", "ALL");
+  const [q, setQ] = useUrlState("q", "");
+  const [openId, setOpenId] = useUrlState("record", "");
 
   const counts = useMemo(() => {
     const m = new Map<string, number>();
@@ -74,8 +79,13 @@ export default function RecordExplorer({ records }: { records: BatchRecord[] }) 
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Find a subscription, bank, or failure"
-          className="ml-auto w-full rounded-lg border border-rule bg-paper-raised px-3.5 py-2 text-[13.5px] placeholder:text-ink-faint focus:border-ink-faint focus:outline-none sm:w-72"
+          type="search"
+          name="record-search"
+          aria-label="Find a record by subscription, bank, or failure"
+          autoComplete="off"
+          spellCheck={false}
+          placeholder="Find a subscription, bank, or failure…"
+          className="ml-auto w-full rounded-lg border border-rule bg-paper-raised px-3.5 py-2 text-[13.5px] placeholder:text-ink-faint focus:border-ink-faint sm:w-72"
         />
       </div>
 
@@ -100,7 +110,7 @@ export default function RecordExplorer({ records }: { records: BatchRecord[] }) 
                 r={r}
                 open={openId === r.subscription_id}
                 onToggle={() =>
-                  setOpenId(openId === r.subscription_id ? null : r.subscription_id)
+                  setOpenId(openId === r.subscription_id ? "" : r.subscription_id)
                 }
               />
             ))}
@@ -108,7 +118,9 @@ export default function RecordExplorer({ records }: { records: BatchRecord[] }) 
         )}
       </div>
 
-      <p className="mt-3 text-[12.5px] text-ink-faint">
+      {/* The count changes as a filter is typed, with no other announcement a
+          screen reader would catch. */}
+      <p className="mt-3 text-[12.5px] text-ink-faint" aria-live="polite">
         Showing {shown.length} of {records.length} records.
       </p>
     </>

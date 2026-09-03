@@ -39,7 +39,7 @@
   --color-clay: #b5533f;
   /* Clay is a fill colour; as TEXT on a clay-soft ground it measured
      4.01:1. This darker cut is 4.97:1 and is used for clay lettering. */
-  --color-clay-ink: #a4442f;
+  --color-clay-ink: #963d2a;
   --color-clay-soft: #e8c3ba;
 
   --font-display: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
@@ -90,6 +90,24 @@ body {
   font-size: 0.8125rem;
   line-height: 1.55;
   color: var(--color-ink-soft);
+}
+
+/* Visible only once focused, so it never occupies layout for pointer users but
+   is the first stop for keyboard users. */
+.skip-link {
+  position: absolute;
+  left: 0.75rem;
+  top: -3rem;
+  z-index: 100;
+  border-radius: 0.5rem;
+  background: var(--color-ink);
+  color: var(--color-paper);
+  padding: 0.6rem 1rem;
+  font-size: 0.875rem;
+  transition: top 150ms ease;
+}
+.skip-link:focus {
+  top: 0.75rem;
 }
 
 *:focus-visible {
@@ -178,4 +196,42 @@ body {
   clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
+}
+
+/* Removes the 300ms double-tap-zoom delay on touch without disabling pinch
+   zoom, which accessibility depends on. */
+button,
+a,
+select,
+input,
+[role="button"] {
+  touch-action: manipulation;
+}
+
+/* Native selects inherit the OS widget colours on Windows, which produces
+   white-on-white in dark mode. Set both explicitly. */
+select {
+  background-color: var(--color-paper-raised);
+  color: var(--color-ink);
+}
+
+/* Headings set their own line breaks badly by default and strand single words
+   on the last line. `balance` is capped at ~6 lines by spec, which every
+   heading here is well inside. */
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+}
+
+/* Paragraphs get the cheaper variant: it only prevents orphans, with no
+   line-count cap. */
+p {
+  text-wrap: pretty;
+}
+
+/* Anchored headings would otherwise sit flush against the viewport top when
+   linked to. */
+:target {
+  scroll-margin-top: 2rem;
 }

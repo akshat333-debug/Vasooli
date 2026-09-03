@@ -36,7 +36,7 @@ export default function BatchPage() {
         <p className="mt-5 max-w-2xl text-[15px] leading-relaxed text-ink-soft sm:text-[16px]">
           Most dunning systems spend those three on a fixed schedule and hope.
           Vasooli diagnoses each failure first, refuses the ones no retry can
-          fix, and spends what is left where it can actually land — inside the
+          fix, and spends what is left where it can actually land, inside the
           RBI e-mandate envelope, with every decision written to an audit trail.
         </p>
       </header>
@@ -92,7 +92,7 @@ export default function BatchPage() {
               {rupees(bl.recovered_above_cap_paise, { decimals: true })} of the
               baseline&rsquo;s total came from a single unattended debit above
               the RBI e-mandate standard cap of ₹15,000. No merchant may bank
-              that as recovered revenue — it is a compliance failure wearing a
+              that as recovered revenue. It is a compliance failure wearing a
               recovery number&rsquo;s clothes. Strip it out and the ranking
               inverts on both axes.
             </p>
@@ -156,7 +156,7 @@ export default function BatchPage() {
           </p>
           <p className="mt-3 border-l-2 border-ink pl-3 text-[14.5px] leading-relaxed font-medium">
             No language model participates in any decision to move money. Timing
-            is a deterministic scorer — reproducible, testable, explainable to a
+            is a deterministic scorer: reproducible, testable, explainable to a
             regulator.
           </p>
         </div>
@@ -192,8 +192,10 @@ function Stat({
         <p className="text-[12.5px] font-medium text-ink-soft">{label}</p>
       </div>
       <p className="display tnum text-[34px] leading-none font-semibold">{value}</p>
-      <p className="tnum mt-2 text-[12.5px] font-medium text-ink-mute">{delta}</p>
-      <p className="mt-3 border-t border-ink/8 pt-3 text-[12.5px] leading-relaxed text-ink-mute">
+      {/* ink-soft, not ink-mute: these sit on a tinted card, which is darker
+          than paper and drops ink-mute to ~4.2:1, under the AA floor. */}
+      <p className="tnum mt-2 text-[12.5px] font-medium text-ink-soft">{delta}</p>
+      <p className="mt-3 border-t border-ink/8 pt-3 text-[12.5px] leading-relaxed text-ink-soft">
         {note}
       </p>
     </div>
@@ -224,7 +226,7 @@ function Compare({
             <span className="text-[12px] text-ink-mute">{name}</span>
             <span
               className={`tnum text-[13px] font-semibold ${
-                breach && (v as number) > 0 ? "text-clay" : "text-ink"
+                breach && (v as number) > 0 ? "text-clay-ink" : "text-ink"
               }`}
             >
               {rupees(v as number)}

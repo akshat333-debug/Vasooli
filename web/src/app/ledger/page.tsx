@@ -1,7 +1,8 @@
+import { Suspense } from "react";
 import LedgerStream from "@/components/LedgerStream";
 import { batch } from "@/lib/data";
 
-export const metadata = { title: "Audit trail — Vasooli" };
+export const metadata = { title: "Audit trail · Vasooli" };
 
 export default function LedgerPage() {
   const { ledger } = batch;
@@ -23,11 +24,19 @@ export default function LedgerPage() {
           trail.
         </p>
       </header>
-      <LedgerStream
+      <Suspense
+        fallback={
+          <p className="py-12 text-center text-[14px] text-ink-mute">
+            Loading…
+          </p>
+        }
+      >
+        <LedgerStream
         entries={ledger.entries}
         verified={ledger.verified}
         detail={ledger.detail}
       />
+      </Suspense>
     </div>
   );
 }

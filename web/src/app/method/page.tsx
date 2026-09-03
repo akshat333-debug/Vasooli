@@ -1,6 +1,6 @@
 import { batch } from "@/lib/data";
 
-export const metadata = { title: "Method — Vasooli" };
+export const metadata = { title: "Method · Vasooli" };
 
 const AI_TABLE = [
   ["Detect at-risk", "Rules", false, "Deterministic. A model here is a liability with no upside."],
@@ -13,11 +13,11 @@ const AI_TABLE = [
 const FINDINGS = [
   {
     t: "The scheduler could create the very thing the engine refuses",
-    d: "Retry timing searched a window bounded only by the notice period, never by the mandate's expiry. Given a mandate dying in two days and a replenishment cycle eight days out, it scheduled the retry six days after the mandate was dead — and reported a confident p=0.62 for a debit the bank would reject. The stopping rules caught dead mandates on the way in; the scheduler manufactured one on the way out.",
+    d: "Retry timing searched a window bounded only by the notice period, never by the mandate's expiry. Given a mandate dying in two days and a replenishment cycle eight days out, it scheduled the retry six days after the mandate was dead, reporting a confident p=0.62 for a debit the bank would reject. The stopping rules caught dead mandates on the way in; the scheduler manufactured one on the way out.",
   },
   {
     t: "A fault in the AI guardrail could kill the money stage",
-    d: "The circuit breaker wrapped the whole diagnosis loop. Any trip or internal fault propagated out and destroyed the entire batch — including every money decision that never needed a model at all. A guardrail that can take down more than it protects is worse than the thing it guards against.",
+    d: "The circuit breaker wrapped the whole diagnosis loop. Any trip or internal fault propagated out and destroyed the entire batch, including every money decision that never needed a model at all. A guardrail that can take down more than it protects is worse than the thing it guards against.",
   },
   {
     t: "The model's work never reached the decision",
@@ -29,7 +29,7 @@ const FINDINGS = [
   },
   {
     t: "An unreachable model was scored as disagreement",
-    d: "With the gateway down, the run reported 20 disagreements — as if a working model had given 20 different answers — rather than 24 failed calls. An accuracy signal computed from calls that never happened is a lie. Unreachable is now counted separately, and a trip surfaces instead of being swallowed.",
+    d: "With the gateway down, the run reported 20 disagreements, as if a working model had given 20 different answers, rather than 24 failed calls. An accuracy signal computed from calls that never happened is a lie. Unreachable is now counted separately, and a trip surfaces instead of being swallowed.",
   },
 ];
 
@@ -70,7 +70,7 @@ export default function MethodPage() {
         <Panel tone="sage" title="Real">
           <ul className="space-y-2.5 text-[14px] leading-relaxed text-ink-soft">
             <li>
-              Live Razorpay test-mode API calls — a real Plan, Subscription and
+              Live Razorpay test-mode API calls: a real Plan, Subscription and
               Orders, logged with their IDs.
             </li>
             <li>
@@ -96,7 +96,7 @@ export default function MethodPage() {
           The comparison between arms{" "}
           <strong className="font-semibold">is</strong> meaningful. Both face
           identical records and identical seeded random draws, so the sequencer
-          cannot win by being handed easier records — only by choosing better
+          cannot win by being handed easier records, only by choosing better
           moments and by declining attempts that were never going to land. If
           the thesis were wrong, it would lose on the same draws.
         </p>
@@ -160,7 +160,7 @@ export default function MethodPage() {
                 The dictionary classified the head of the distribution as it
                 always does, and every failure the dictionary could not name went
                 to a person rather than to a guess. The money decisions are
-                unaffected — the breaker bounds the AI stage only. This is what
+                unaffected, because the breaker bounds the AI stage only. This is what
                 the degradation path looks like when it runs, not a description
                 of what it would do.
               </p>

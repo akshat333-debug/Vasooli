@@ -1,7 +1,8 @@
+import { Suspense } from "react";
 import RecordExplorer from "@/components/RecordExplorer";
 import { batch } from "@/lib/data";
 
-export const metadata = { title: "Records — Vasooli" };
+export const metadata = { title: "Records · Vasooli" };
 
 export default function RecordsPage() {
   return (
@@ -13,11 +14,19 @@ export default function RecordsPage() {
         </h1>
         <p className="mt-4 max-w-2xl text-[15px] leading-relaxed text-ink-soft">
           Eight stopping rules run in order, cheapest and most certain refusals
-          first. Open any record to see which rule fired and why — the same
+          first. Open any record to see which rule fired and why, using the same
           verdict string that was written to the audit trail.
         </p>
       </header>
-      <RecordExplorer records={batch.records} />
+      <Suspense
+        fallback={
+          <p className="py-12 text-center text-[14px] text-ink-mute">
+            Loading…
+          </p>
+        }
+      >
+        <RecordExplorer records={batch.records} />
+      </Suspense>
     </div>
   );
 }

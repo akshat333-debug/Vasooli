@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useUrlState } from "@/lib/useUrlState";
 import type { LedgerEntry } from "@/lib/data";
 
 const EVENT_TONE: Record<string, string> = {
@@ -28,8 +29,10 @@ export default function LedgerStream({
   verified: boolean;
   detail: string;
 }) {
-  const [arm, setArm] = useState<string>("all");
-  const [event, setEvent] = useState<string>("all");
+  // Shareable, same reasoning as the records table. `limit` stays local: how
+  // far someone scrolled is not a view worth linking to.
+  const [arm, setArm] = useUrlState("arm", "all");
+  const [event, setEvent] = useUrlState("event", "all");
   const [limit, setLimit] = useState(PAGE);
 
   const events = useMemo(
@@ -85,7 +88,7 @@ export default function LedgerStream({
             style={{ background: verified ? "#8fae86" : "#b5533f" }}
           />
           <p className="verdict !text-ink">
-            {verified ? "Chain verified" : "Chain broken"} — {detail}
+            {verified ? "Chain verified" : "Chain broken"}. {detail}
           </p>
         </div>
 
@@ -134,7 +137,7 @@ export default function LedgerStream({
             onClick={() => setLimit((l) => l + PAGE * 2)}
             className="w-full border-t border-rule py-3 text-[13px] text-ink-mute transition-colors hover:bg-paper-sunk/50 hover:text-ink"
           >
-            Show more — {filtered.length - limit} remaining
+            Show More ({filtered.length - limit} remaining)
           </button>
         )}
       </div>
