@@ -1,4 +1,8 @@
-"""Vasooli CLI. Day 1 surface: seed, diagnose, verify-ledger."""
+"""Vasooli CLI.
+
+Every command is a real engine run. Nothing here reports a number the engine
+did not produce.
+"""
 
 from __future__ import annotations
 
