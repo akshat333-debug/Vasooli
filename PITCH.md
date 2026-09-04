@@ -2,6 +2,8 @@
 
 Target 4:45. Record terminal + browser, voiceover. Unlisted YouTube.
 
+Live site for the browser segments: https://akshat333-debug.github.io/Vasooli/
+
 Run these before recording so output is fresh:
 ```bash
 rm -f vasooli.db && uv run vasooli seed && uv run vasooli run && uv run vasooli demo-trip && uv run vasooli live && uv run pytest -q
@@ -107,9 +109,11 @@ rm -f vasooli.db && uv run vasooli seed && uv run vasooli run && uv run vasooli 
 >
 > The absolute rupee figure isn't a production claim. The comparison is, because both arms face identical records and identical random draws — if my thesis were wrong, the sequencer would lose on the same draws.
 >
-> 213 tests, hermetic. 91% coverage. Every decision hash-chained.
+> 227 tests, hermetic. 92% coverage. Every decision hash-chained.
 >
 > Retries are a budget of three. Vasooli spends them on the failures that can actually be recovered, refuses the ones that can't — loudly and on the record — and gives every rupee it refuses somewhere to go.
+>
+> The live interface is at the link in the description — every page is the real output of this batch, including a chain you can try to tamper with yourself.
 
 ---
 

@@ -6,6 +6,8 @@ Razorpay AI Buildathon 2026 · Track 03, AI Revenue Recovery
 
 > *Vasooli* (वसूली) is Hindi for recovery or collection.
 
+**[Live interface →](https://akshat333-debug.github.io/Vasooli/)** — the actual output of a real batch run, not a mockup. Start with [Rulebook](https://akshat333-debug.github.io/Vasooli/rulebook/) or verify the audit chain yourself on [Ledger](https://akshat333-debug.github.io/Vasooli/ledger/).
+
 ---
 
 ## Table of contents
@@ -65,7 +67,7 @@ That reframing is the whole project. Not *retry harder*, but **allocate three at
 | **Lint** | `ruff` clean; `tsc --noEmit` clean |
 | **CI** | GitHub Actions, engine + web, given no credentials on purpose |
 | **Live integration** | Razorpay test-mode Plan, Subscription and Orders created for real |
-| **Deployment** | Configured for GitHub Pages and Vercel, **not yet published** |
+| **Deployment** | [Live on GitHub Pages](https://akshat333-debug.github.io/Vasooli/) |
 
 Everything below is reproducible from a clean clone with `uv run pytest` and `uv run vasooli run`.
 
