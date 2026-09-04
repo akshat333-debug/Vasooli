@@ -18,10 +18,16 @@ function groupKey(r: BatchRecord) {
   return `${r.sequencer.rule_fired ?? r.rule_fired}|${r.sequencer.escalation ?? "NONE"}`;
 }
 
-// The headline of a group is one member's verdict, trimmed. It is a label for
-// a group the engine defined, not the definition of the group.
+// The headline of a group is one member's verdict, trimmed. It labels a group
+// the engine defined; it does not define it. Rules 5 and 6 interpolate that
+// member's own rupee amount, so it is stripped -- a group of two headed by one
+// member's figure reads as if the whole group were that amount.
 function groupHeadline(reason: string) {
-  return reason.split(" \u2014 ")[0].split(" - ")[0];
+  return reason
+    .split(" \u2014 ")[0]
+    .split(" - ")[0]
+    .replace(/amount \u20b9[\d,.]+ /, "an amount ")
+    .replace(/ \u20b9[\d,.]+$/, "");
 }
 
 export default function ExceptionList({

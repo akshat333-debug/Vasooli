@@ -17,6 +17,7 @@ Two rules this module exists to enforce:
 
 from __future__ import annotations
 
+import re
 from collections import Counter, defaultdict
 from typing import Any
 
@@ -33,6 +34,18 @@ ESCALATION_LABEL = {
     "AFA_PAYMENT_LINK": "above the RBI AFA-free cap: customer-present link with AFA",
     "HUMAN_REVIEW": "unclassifiable: a person reads the bank's own text",
 }
+
+
+#: Rules 5 and 6 interpolate one record's own amounts into its verdict. Used as
+#: a group heading those figures read as the group's, so they are generalised
+#: away. The per-record verdicts keep them; only the heading loses them.
+_AMOUNTS = ((r"amount ₹[\d,.]+ ", "an amount "), (r" ₹[\d,.]+$", ""))
+
+
+def _generalise(verdict: str) -> str:
+    for pat, rep in _AMOUNTS:
+        verdict = re.sub(pat, rep, verdict)
+    return verdict
 
 
 def _rs(paise: float) -> str:
@@ -188,7 +201,9 @@ def render(
     total_value = sum(o.amount_paise for v in groups.values() for o in v)
     for (rule, esc), items in sorted(groups.items(), key=lambda kv: -len(kv[1])):
         val = sum(o.amount_paise for o in items)
-        head = items[0].terminal_reason.split(" - ")[0].split(" — ")[0]
+        # Rules 5 and 6 interpolate one record's own rupee amount into the
+        # verdict. Printed as a group heading it reads as the group's total.
+        head = _generalise(items[0].terminal_reason.split(" - ")[0].split(" — ")[0])
         add(f"  {len(items):>4}  {_rs(val):>14}   rule {rule} / {esc}")
         add(f"        {head}")
     add("")

@@ -16,12 +16,21 @@ export default function LedgerPage() {
         <p className="mt-4 max-w-2xl text-[15px] leading-relaxed text-ink-soft">
           Every decision is written here before it is acted on. The chain rule is{" "}
           <span className="font-mono text-[13.5px]">
-            sha256(prev_hash ‖ payload)
+            hmac-sha256(key, prev_hash ‖ payload)
           </span>
           , so editing any historical row breaks every hash after it and
           verification reports the first broken index rather than a bare pass or
           fail. A log that can be quietly revised afterwards is not an audit
           trail.
+        </p>
+        <p className="mt-3 max-w-2xl text-[14px] leading-relaxed text-ink-mute">
+          It is keyed rather than plain, because a plain chain catches an
+          accident and nothing else: anyone who can write to the database can
+          recompute every hash after their edit and the result verifies clean.
+          Unset, the key falls back to a published constant and verification
+          reports <em>tamper-evident</em> rather than <em>tamper-proof</em>, in
+          those words &mdash; a clone must run out of the box, and it must not
+          claim a protection it does not have.
         </p>
       </header>
       <Suspense

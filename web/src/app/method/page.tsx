@@ -31,6 +31,18 @@ const FINDINGS = [
     t: "An unreachable model was scored as disagreement",
     d: "With the gateway down, the run reported 20 disagreements, as if a working model had given 20 different answers, rather than 24 failed calls. An accuracy signal computed from calls that never happened is a lie. Unreachable is now counted separately, and a trip surfaces instead of being swallowed.",
   },
+  {
+    t: "My headline rested on a bug in my own simulator",
+    d: "The strongest claim on this page used to be that the baseline only wins on raw totals by making debits above the RBI cap. An external reviewer pointed out that above \u20b915,000 the debit needs additional factor authentication, so the bank declines it \u2014 that money was never deliverable, and the attempt layer was crediting it anyway. The compliance adjustment was correcting my own bug rather than measuring a behaviour. Fixed, the finding got sharper: the baseline was not merely breaking a rule, it was burning attempts on debits that could never settle. Raw and adjusted now coincide.",
+  },
+  {
+    t: "The money breaker advertised two limits it never applied",
+    d: "RecoveryPolicy declared a per-debit cap of \u20b915,000 and a three-attempt budget, both with comments saying they must never be exceeded, and enforced neither. Neither field was read anywhere in the engine. This was the third instance of the same shape in the log, after an inert cost limit and a breaker that truncated the measurement it protected. Both are enforced now, as a refusal that lets the batch continue rather than a trip that stops it.",
+  },
+  {
+    t: "The late-revocation hazard favoured my own arm by name",
+    d: "A mandate can die between the decision and the debit. That was implemented as the same hash function called on both code paths, gated on the arm's name \u2014 so it was a rule that favoured the sequencer rather than a fact both arms faced. It is now a property of the record that takes no arm argument at all, and a test parses the attempt function's syntax tree and fails if the word reappears in it. Published sensitivity: removing the hazard entirely costs 8% of the gain.",
+  },
 ];
 
 export default function MethodPage() {
@@ -74,7 +86,7 @@ export default function MethodPage() {
               Orders, logged with their IDs.
             </li>
             <li>
-              The taxonomy, all eight stopping rules, the circuit breaker, the
+              The taxonomy, all seven stopping rules, both circuit breakers, the
               hash chain, and the arm comparison. None of it is mocked in the
               measurement path.
             </li>

@@ -61,9 +61,9 @@ EXCEPTION LIST - every record not recovered by the sequencer
      4     Rs 3,996.00   rule 4 / HUMAN_REVIEW
         human review: failure could not be classified by dict or model
      2    Rs 73,653.24   rule 6 / AFA_PAYMENT_LINK
-        escalated: amount ₹31,045.08 exceeds the RBI e-mandate AFA-free cap
+        escalated: an amount exceeds the RBI e-mandate AFA-free cap
      1       Rs 299.00   rule 5 / MANDATE_UPGRADE
-        human review: amount ₹299.00 exceeds the mandate cap ₹209.30
+        human review: an amount exceeds the mandate cap
 
   75 of 100 records unrecovered, Rs 218,947.71 still at risk.
   Attempts preserved by refusing to act: 86
@@ -101,7 +101,7 @@ FAILURE MIX
 ------------------------------------------------------------------------------
 CONTROLS
 ------------------------------------------------------------------------------
-  Audit chain verified : INTACT (453 rows)
+  Audit chain verified : INTACT (1359 rows)
     chain intact, unkeyed — detects accidental edits, but anyone with write access could rebuild it; set VASOOLI_LEDGER_KEY to prevent that
   Batch breaker        : not tripped
 ==============================================================================

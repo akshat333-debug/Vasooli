@@ -13,9 +13,10 @@ export default function RecordsPage() {
           Every record, and the rule that decided it.
         </h1>
         <p className="mt-4 max-w-2xl text-[15px] leading-relaxed text-ink-soft">
-          Eight stopping rules run in order, cheapest and most certain refusals
-          first. Open any record to see which rule fired and why, using the same
-          verdict string that was written to the audit trail.
+          Seven stopping rules run in order, cheapest and most certain refusals
+          first, then a scheduling rule for whatever survives. Open any record to
+          see which rule fired, where it escalates to, and why &mdash; using the
+          same verdict string that was written to the audit trail.
         </p>
       </header>
       <Suspense

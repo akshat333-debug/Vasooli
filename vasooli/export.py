@@ -205,16 +205,21 @@ SCENARIOS: list[dict[str, Any]] = [
     {
         "id": "no_compliance_rule",
         "name": "Without the RBI cap rule",
-        "note": "Rule 6 off. The only change that produces debits outside the "
-                "unattended envelope.",
+        "note": "Rule 6 off. Nothing above the cap is recovered anyway -- the "
+                "breaker catches it at the action boundary and the network "
+                "would decline it regardless. The cost moves one layer down, "
+                "into the refusals row.",
         "policy": {},
         "disabled_rules": [6],
     },
     {
         "id": "no_mandate_check",
         "name": "Without the dead-mandate check",
-        "note": "Rule 3 off. The most expensive rule to remove, measured in "
-                "wasted attempts.",
+        "note": "Rule 3 off. Costs nothing here, because the pre-flight status "
+                "call at the action boundary catches the same records without "
+                "spending an attempt. Deliberate redundancy: the rule is what "
+                "produces the re-mandate escalation, the boundary check is what "
+                "survives the world changing after the decision.",
         "policy": {},
         "disabled_rules": [3],
     },
