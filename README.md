@@ -587,8 +587,11 @@ Filters are synced to the URL, so a filtered view can be linked and shared. On a
 
 ```bash
 uv venv && uv pip install -e ".[dev,razorpay]"
+# or, without uv: pip install -r requirements.txt (exact pinned versions)
 cp .env.example .env      # test-mode Razorpay keys only
 ```
+
+Architecture notes live in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Sample synthetic data (the same seed everything else in this README uses) is in [`data/`](data/).
 
 | Command | What it does |
 |---|---|
