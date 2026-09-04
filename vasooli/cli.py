@@ -8,13 +8,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from collections import Counter
+from datetime import timedelta
 
 from dotenv import load_dotenv
 
 from .bandit import run_study, shift_sweep
-from .decide import decide
+from .decide import Action, decide
 from .diagnose import diagnose_batch
 from .execute import run_batch
 from .experiments import (
@@ -32,6 +34,7 @@ from .policy import RecoveryPolicy
 from .razorpay_adapter import run_live_probe
 from .report import render
 from .sim.seed import BATCH_NOW, generate_batch
+from .taxonomy import classify_by_code
 
 
 def _cmd_seed(args: argparse.Namespace) -> int:
@@ -360,6 +363,202 @@ def _cmd_bandit(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_webhook(args: argparse.Namespace) -> int:
+    """Drive the live-event door end to end, refusals included.
+
+    webhook.py is the module that turns this from a batch job into something a
+    deployment can be told about, and until now nothing could run it. This
+    command feeds it four deliveries in order -- a forgery, a real failure, a
+    replay of that same delivery, and an event type the system does not act on
+    -- because the interesting behaviour is in what it refuses, not in the happy
+    path.
+    """
+    import hashlib
+    import hmac
+    import json as _json
+    import uuid
+
+    from .models import MAX_RETRY_BUDGET
+    from .webhook import EventIgnored, SignatureInvalid, ingest
+
+    secret = os.environ.get("RAZORPAY_WEBHOOK_SECRET", "whsec_demo")
+    ledger = Ledger(args.db)
+    run_id = uuid.uuid4().hex[:12]
+
+    def event(event_id: str, kind: str = "payment.failed", **sub_over) -> dict:
+        sub = {"id": args.subscription, "status": "active", "customer_id": "cust_demo"}
+        sub.update(sub_over)
+        return {
+            "id": event_id,
+            "event": kind,
+            "created_at": int(BATCH_NOW.timestamp()),
+            "payload": {
+                "payment": {"entity": {
+                    "amount": args.amount, "method": "upi", "bank": "HDFC",
+                    "error_code": "BAD_REQUEST_ERROR",
+                    "error_reason": "insufficient_funds",
+                    "error_description": "Your account does not have enough balance",
+                    "subscription_id": args.subscription,
+                }},
+                "subscription": {"entity": sub},
+            },
+        }
+
+    def sign(body: bytes, key: str) -> str:
+        return hmac.new(key.encode(), body, hashlib.sha256).hexdigest()
+
+    print("Razorpay webhook ingestion. Verify, deduplicate, record, then decide.\n")
+    print(f"  secret        : {'from RAZORPAY_WEBHOOK_SECRET' if 'RAZORPAY_WEBHOOK_SECRET' in os.environ else 'whsec_demo (set RAZORPAY_WEBHOOK_SECRET to use your own)'}")
+    print(f"  subscription  : {args.subscription}")
+    print(f"  ledger        : {args.db}\n")
+
+    # A mature subscription. paid_count is what the old code read to derive the
+    # retry count, and reading it here would refuse this record as exhausted.
+    mature = {"paid_count": 10, "remaining_count": 2}
+
+    deliveries = [
+        ("forged signature", event("evt_forged"), "attacker_secret", mature),
+        ("genuine payment.failed", event("evt_1"), secret, mature),
+        ("replay of evt_1", event("evt_1"), secret, mature),
+        ("a SECOND genuine failure, same subscription", event("evt_2"), secret, mature),
+        ("subscription.charged", event("evt_3", "subscription.charged"), secret, mature),
+    ]
+
+    for label, ev, key, sub_extra in deliveries:
+        ev["payload"]["subscription"]["entity"].update(sub_extra)
+        body = _json.dumps(ev).encode()
+        print(f"  -> {label}")
+        try:
+            res = ingest(body, sign(body, key), ledger, run_id=run_id, now=BATCH_NOW,
+                         secret=secret)
+        except SignatureInvalid as e:
+            print(f"     REFUSED before parsing: {e}")
+            print("     The body was never handed to a parser. An unverified payload")
+            print("     is not data, it is a suggestion.\n")
+            continue
+        except EventIgnored as e:
+            print(f"     ignored: {e}\n")
+            continue
+
+        print(f"     {res.note}")
+        if res.record is None:
+            print()
+            continue
+
+        rec = res.record
+        fc = classify_by_code(rec.error_code, rec.error_reason)
+        decision = decide(rec, fc, BATCH_NOW)
+        ledger.append(run_id=run_id, arm="webhook", event="decision",
+                      verdict=decision.verdict, subscription_id=rec.subscription_id,
+                      action=decision.action.value,
+                      escalation=decision.escalation.value,
+                      amount_paise=rec.amount_paise)
+        # rec.attempts_used was derived BEFORE ingest wrote this delivery's own
+        # row, so re-counting here would report one too many.
+        print(f"     attempts_used  : {rec.attempts_used} of {MAX_RETRY_BUDGET} "
+              f"-- counted from prior payment.failed events in our own ledger. "
+              f"paid_count on this subscription is "
+              f"{mature['paid_count']}, which is SUCCESSFUL charges; deriving the "
+              f"retry count from it refused mature subscriptions as exhausted.")
+        print(f"     salary_day     : {rec.salary_day} "
+              f"(a webhook carries no payday; unknown schedules at the legal floor)")
+        print(f"     classified     : {fc.value}")
+        print(f"     rule {decision.rule_fired} -> {decision.action.value} "
+              f"/ {decision.escalation.value}")
+        print(f"     {decision.verdict}\n")
+
+    v = ledger.verify()
+    print(f"  {len(list(ledger.rows(run_id)))} rows written this run; "
+          f"chain {'INTACT' if v.ok else 'BROKEN'} across {v.rows} total.")
+    print("  Nothing was decided before the signature was checked, and nothing")
+    print("  in the payload could raise a cap or skip a stopping rule.")
+    ledger.close()
+    return 0
+
+
+def _cmd_promise(args: argparse.Namespace) -> int:
+    """Show what a customer's word may and may not do to a money decision.
+
+    A promise to pay is unverified input over an untrusted channel. It may push
+    a retry LATER and nothing else. This walks the four refusals and the one
+    case that is honoured, on a real record from the batch.
+    """
+    import uuid
+
+    from .promise import (
+        MAX_HONOURED_MISSES,
+        MAX_PROMISE_HORIZON_DAYS,
+        Promise,
+        apply_promise,
+        settle,
+    )
+
+    batch = generate_batch(args.n, seed=args.seed)
+    diagnoses, _ = diagnose_batch(batch, use_llm=False)
+    by = {d.subscription_id: d for d in diagnoses}
+    ledger = Ledger(args.db)
+    run_id = uuid.uuid4().hex[:12]
+
+    pairs = [(r, decide(r, by[r.subscription_id].failure_class, BATCH_NOW)) for r in batch]
+    live = next((p for p in pairs if p[1].action is Action.RETRY_SCHEDULED), None)
+    refused = next((p for p in pairs if p[1].action is not Action.RETRY_SCHEDULED), None)
+    if live is None or refused is None:
+        print("This batch has no scheduled and refused pair to demonstrate with.")
+        ledger.close()
+        return 0
+
+    rec, dec = live
+    print("Promise to pay. Unverified customer input, folded into a money decision.\n")
+    print(f"  record        : {rec.subscription_id}, Rs {rec.amount_paise / 100:,.2f}")
+    print(f"  engine says   : {dec.verdict}")
+    print(f"  scheduled for : {dec.scheduled_at:%Y-%m-%d %H:%M}\n")
+
+    later = (dec.scheduled_at or BATCH_NOW) + timedelta(days=3)
+    cases = [
+        ("moves the retry later", rec, dec,
+         Promise(subscription_id=rec.subscription_id, promised_for=later,
+                 made_at=BATCH_NOW, quote="salary 5th ko aa raha hai, tab try karo")),
+        ("cannot pull it forward", rec, dec,
+         Promise(subscription_id=rec.subscription_id, made_at=BATCH_NOW,
+                 promised_for=(dec.scheduled_at or BATCH_NOW) - timedelta(days=2),
+                 quote="abhi try kar lo")),
+        (f"cannot outlast the {MAX_PROMISE_HORIZON_DAYS}-day horizon", rec, dec,
+         Promise(subscription_id=rec.subscription_id, made_at=BATCH_NOW,
+                 promised_for=BATCH_NOW + timedelta(days=MAX_PROMISE_HORIZON_DAYS + 5),
+                 quote="agle mahine ke baad")),
+        (f"stops counting after {MAX_HONOURED_MISSES} broken promises", rec, dec,
+         Promise(subscription_id=rec.subscription_id, promised_for=later,
+                 made_at=BATCH_NOW, prior_misses=MAX_HONOURED_MISSES,
+                 quote="is baar pakka")),
+        ("cannot reopen a record the rules refused", refused[0], refused[1],
+         Promise(subscription_id=refused[0].subscription_id, made_at=BATCH_NOW,
+                 promised_for=BATCH_NOW + timedelta(days=2), quote="kal kar dunga")),
+    ]
+
+    for label, r, d, promise in cases:
+        verdict = apply_promise(r, d, promise, BATCH_NOW)
+        ledger.append(run_id=run_id, arm="promise", event="promise_applied",
+                      verdict=verdict.verdict, subscription_id=r.subscription_id,
+                      honoured=verdict.honoured, quote=promise.quote)
+        mark = "HONOURED" if verdict.honoured else "REFUSED "
+        print(f"  {mark}  {label}")
+        print(f'            customer: "{promise.quote}"')
+        print(f"            {verdict.verdict}")
+        if verdict.scheduled_at:
+            print(f"            retry now at {verdict.scheduled_at:%Y-%m-%d %H:%M}")
+        print()
+
+    kept = settle(cases[0][3], recovered=True)
+    broken = settle(cases[0][3], recovered=False)
+    print(f"  Settling prices the next one: kept -> {kept.state.value}, "
+          f"{kept.prior_misses} miss(es); broken -> {broken.state.value}, "
+          f"{broken.prior_misses} miss(es).")
+    print("  Trust is a resource with a floor, exactly like the retry budget.")
+    print(f"\n  {len(list(ledger.rows(run_id)))} promise decisions written to {args.db}.")
+    ledger.close()
+    return 0
+
+
 def _cmd_verify_ledger(args: argparse.Namespace) -> int:
     L = Ledger(args.db)
     r = L.verify()
@@ -402,6 +601,18 @@ def main(argv: list[str] | None = None) -> int:
     t.add_argument("--cap", type=int, default=25)
     t.add_argument("--db", default="vasooli-demo.db")
     t.set_defaults(fn=_cmd_demo_trip)
+
+    wh = sub.add_parser("webhook", help="drive the live-event door end to end")
+    wh.add_argument("--subscription", default="sub_live_demo")
+    wh.add_argument("--amount", type=int, default=49900, help="paise")
+    wh.add_argument("--db", default="vasooli-webhook.db")
+    wh.set_defaults(fn=_cmd_webhook)
+
+    pr = sub.add_parser("promise", help="what a customer's word may and may not do")
+    pr.add_argument("-n", type=int, default=100)
+    pr.add_argument("--seed", type=int, default=42)
+    pr.add_argument("--db", default="vasooli-promise.db")
+    pr.set_defaults(fn=_cmd_promise)
 
     lv = sub.add_parser("live", help="probe and exercise the real Razorpay test API")
     lv.add_argument("-n", type=int, default=100)

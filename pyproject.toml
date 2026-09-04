@@ -12,8 +12,18 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "coverage>=7.6", "hypothesis>=6.100"]
+# Kept for `pip install -e ".[dev]"`, which CI uses. The dependency-group below
+# is the one that makes a bare `uv run pytest` work on a clean clone.
+dev = ["pytest>=8.0", "coverage>=7.6", "hypothesis>=6.100", "ruff>=0.6"]
 razorpay = ["razorpay>=1.4"]
+
+# PEP 735. `uv run` installs the `dev` group automatically; an extra is NOT
+# installed unless asked for. Without this, a fresh clone running the command
+# the README prints -- `uv run pytest` -- fell through to whatever pytest was
+# on PATH, which has neither this package nor hypothesis, and reported 17
+# collection errors. CI never caught it because CI installs the extra by name.
+[dependency-groups]
+dev = ["pytest>=8.0", "coverage>=7.6", "hypothesis>=6.100", "ruff>=0.6"]
 
 [project.scripts]
 vasooli = "vasooli.cli:main"

@@ -329,7 +329,7 @@ The engine emits an `expected_success` with every scheduled retry. Bucketed pred
 | `webhook.py` | 260 | Razorpay ingestion: signature before parsing, `compare_digest`, replay rejection, conservative defaults. Derives `attempts_used` from our own ledger rather than Razorpay's `paid_count`, and leaves `salary_day` unknown rather than inventing one. Decides nothing. |
 | `razorpay_adapter.py` | 272 | Test-mode only, refuses live keys, probes account capability rather than assuming. |
 | `logging.py` | 86 | Operational JSON lines. Silent unless `VASOOLI_LOG` is set. |
-| `cli.py` | 448 | Ten commands, see §14. |
+| `cli.py` | 659 | Twelve commands, see §14. Every module that makes a decision has one, so nothing in this repo is describable but unrunnable. |
 
 ### Interface, `web/src/`
 
@@ -586,12 +586,14 @@ cp .env.example .env      # test-mode Razorpay keys only
 | `uv run vasooli bandit` | Learned retry timing versus the deterministic scorer |
 | `uv run vasooli nudge` | Draft customer messages for review; **sends nothing** |
 | `uv run vasooli demo-trip` | Show the batch breaker halting a run mid-flight |
+| `uv run vasooli webhook` | Drive the live-event door: a forged signature, a real failure, a replay, a second failure, an unhandled type |
+| `uv run vasooli promise` | What a customer's promise to pay may and may not do to a money decision |
 | `uv run vasooli live` | Probe the real Razorpay test API, create a Subscription and Orders |
 | `uv run vasooli export` | Emit a batch run as JSON for the interface |
 | `uv run vasooli verify-ledger` | Recompute the audit hash chain |
 
 ```bash
-uv run pytest          # 213 tests, hermetic
+uv run pytest          # 218 tests, hermetic
 cd web && npm install && npm run dev
 ```
 
@@ -611,7 +613,7 @@ cd web && npm install && npm run dev
 
 ## 15. Test inventory
 
-**213 tests, hermetic.** No network, no API key, no gateway. CI is given no credentials on purpose, so a test that starts needing one fails there rather than in front of a reader.
+**218 tests, hermetic.** No network, no API key, no gateway. CI is given no credentials on purpose, so a test that starts needing one fails there rather than in front of a reader.
 
 | File | Tests | Covers |
 |---|---:|---|
@@ -631,6 +633,7 @@ cd web && npm install && npm run dev
 | `test_seed.py` | 6 | Determinism, all three hazards present |
 | `test_sim_model.py` | 6 | Terminal classes hard zero, curve shapes |
 | `test_taxonomy.py` | 6 | `UNKNOWN` is never guessed past |
+| `test_cli_commands.py` | 5 | The webhook and promise commands actually demonstrate what they claim |
 | `test_diagnose.py` | 5 | Degrades to human review, never to a guess |
 
 The property tests are worth singling out: Hypothesis generates adversarial records (expired mandates, zero budgets, amounts a rupee either side of a cap) and asserts that the engine never schedules past expiry, never precedes the notice floor, never auto-actions above the RBI cap, never touches a dead mandate, and always carries a verdict and a rule. They check the cases I did not think of.
@@ -766,7 +769,7 @@ Nothing here needs credentials. Every claim in this README is checkable from a c
 git clone https://github.com/akshat333-debug/Vasooli && cd Vasooli
 uv venv && uv pip install -e ".[dev]"
 
-uv run pytest                    # 213 tests pass with no network
+uv run pytest                    # 218 tests pass with no network
 uv run vasooli run               # reproduces the headline table
 uv run vasooli experiments       # reproduces the sweep and attribution
 uv run vasooli bandit            # reproduces the negative ML result
@@ -811,7 +814,7 @@ vasooli/
     └── seed.py          seeded batch with three hazards built in
 
 web/                     Next.js 15 viewer, static export
-tests/                   213 tests across 17 files
+tests/                   218 tests across 18 files
 BATCH_REPORT.txt         the measured result, regenerate with `vasooli run`
 EXPERIMENTS.txt          the six checks, regenerate with `vasooli experiments --seeds 40`
 NEXT_STEPS.md            per-item record of what each upgrade was worth

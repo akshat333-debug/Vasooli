@@ -17,25 +17,37 @@ jobs:
         with:
           enable-cache: true
 
+      # Deliberately `uv sync` + `uv run`, which is exactly what the README
+      # tells a reader to do. CI used to `uv pip install -e ".[dev]"`, naming
+      # the extra explicitly -- so CI was green while a fresh clone running
+      # `uv run pytest` fell through to whatever pytest was on PATH and failed
+      # to collect a single test. A CI that installs differently from the
+      # documented path cannot catch that class of bug.
       - name: Install
-        run: uv pip install --system -e ".[dev]"
+        run: uv sync
 
       - name: Lint
-        run: uvx ruff check vasooli tests
+        run: uv run ruff check vasooli tests
 
       # No credentials are provided to CI on purpose. The suite is hermetic —
       # it must pass with no API key, no gateway and no network. If a test ever
       # starts needing one of those, this job is where it should fail.
       - name: Tests with coverage
         run: |
-          coverage run -m pytest -q
-          coverage report --fail-under=90
+          uv run coverage run -m pytest -q
+          uv run coverage report --fail-under=90
 
+      # Every command a reader is told to run, run. A command that only exists
+      # in the README is not a feature.
       - name: Batch runs end to end
         run: |
-          python -m vasooli.cli run --no-llm
-          python -m vasooli.cli verify-ledger
-          python -m vasooli.cli experiments --seeds 5 -n 40
+          uv run vasooli run --no-llm
+          uv run vasooli verify-ledger
+          uv run vasooli webhook
+          uv run vasooli promise -n 40
+          uv run vasooli demo-trip
+          uv run vasooli export
+          uv run vasooli experiments --seeds 5 -n 40
 
   web:
     name: web — typecheck and build
