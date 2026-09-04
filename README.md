@@ -126,11 +126,11 @@ Refusing to debit is only half an answer. The money is still owed, and a system 
 
 | Count | Value | Route | What a merchant does |
 |---:|---:|---|---|
-| 28 | ₹85,839.47 | `RE_MANDATE_LINK` | send a new mandate registration link |
+| 29 | ₹88,338.47 | `RE_MANDATE_LINK` | send a new mandate registration link |
 | 2 | ₹73,653.24 | `AFA_PAYMENT_LINK` | customer-present payment link with AFA |
 | 35 | ₹50,965.00 | `WINBACK_CAMPAIGN` | fresh invoice plus a winback nudge |
 | 6 | ₹4,494.00 | `MANDATE_UPGRADE` | request a cap upgrade, or split the invoice |
-| 4 | ₹3,996.00 | `HUMAN_REVIEW` | a person reads the bank's own text |
+| 3 | ₹1,497.00 | `HUMAN_REVIEW` | a person reads the bank's own text |
 
 **The baseline produces none of this.** It leaves 71 unrecovered records and 0 escalations: it spends the attempts, halts the subscription, and says nothing about what happens next.
 
@@ -140,14 +140,16 @@ Refusing to debit is only half an answer. The money is still owed, and a system 
 
 Grouped by the `(rule_fired, escalation)` pair the engine exported, not by parsing its own prose. Nothing is filtered, and there is no top-N.
 
+These figures are from a run with the model live. It made 24 calls: 20 on a sampled head purely to be scored against the dictionary (**20/20 agreement**, and its answer was never obeyed there), and 4 on the unmapped tail where it is load-bearing. It **rescued one record** — a free-text description of a cancelled mandate carrying an error code absent from `CODE_MAP` — which moved that record from rule 4 (unclassifiable, human review) to rule 2 (terminal class, re-mandate link). The other 3 it declined to classify, and they went to a person. That is the whole case for where the model sits, visible in one line of a report.
+
 | Count | Value | Rule | Route |
 |---:|---:|---|---|
 | 22 | ₹29,378.00 | 8, attempts spent without recovery | `WINBACK_CAMPAIGN` |
 | 14 | ₹15,386.00 | 3, mandate revoked *after* the decision, caught at execution | `RE_MANDATE_LINK` |
-| 14 | ₹70,453.47 | 2, `MANDATE_REVOKED` | `RE_MANDATE_LINK` |
+| 15 | ₹72,952.47 | 2, `MANDATE_REVOKED` | `RE_MANDATE_LINK` |
 | 13 | ₹21,587.00 | 1, retry budget already exhausted on arrival | `WINBACK_CAMPAIGN` |
 | 5 | ₹4,195.00 | 2, `LIMIT_EXCEEDED` | `MANDATE_UPGRADE` |
-| 4 | ₹3,996.00 | 4, unclassifiable by dict or model | `HUMAN_REVIEW` |
+| 3 | ₹1,497.00 | 4, unclassifiable by dict or model | `HUMAN_REVIEW` |
 | 2 | ₹73,653.24 | 6, above the RBI AFA-free cap | `AFA_PAYMENT_LINK` |
 | 1 | ₹299.00 | 5, above the mandate's own cap | `MANDATE_UPGRADE` |
 

@@ -50,15 +50,15 @@ EXCEPTION LIST - every record not recovered by the sequencer
 ------------------------------------------------------------------------------
     22    Rs 29,378.00   rule 8 / WINBACK_CAMPAIGN
         all available attempts spent without recovery
+    15    Rs 72,952.47   rule 2 / RE_MANDATE_LINK
+        stopped: MANDATE_REVOKED
     14    Rs 15,386.00   rule 3 / RE_MANDATE_LINK
         stopped at execution: mandate revoked after the decision was made
-    14    Rs 70,453.47   rule 2 / RE_MANDATE_LINK
-        stopped: MANDATE_REVOKED
     13    Rs 21,587.00   rule 1 / WINBACK_CAMPAIGN
         stopped: retry budget exhausted (3/3)
      5     Rs 4,195.00   rule 2 / MANDATE_UPGRADE
         stopped: LIMIT_EXCEEDED
-     4     Rs 3,996.00   rule 4 / HUMAN_REVIEW
+     3     Rs 1,497.00   rule 4 / HUMAN_REVIEW
         human review: failure could not be classified by dict or model
      2    Rs 73,653.24   rule 6 / AFA_PAYMENT_LINK
         escalated: an amount exceeds the RBI e-mandate AFA-free cap
@@ -71,7 +71,7 @@ EXCEPTION LIST - every record not recovered by the sequencer
 ------------------------------------------------------------------------------
 ESCALATION QUEUE - the compliant next step for every rupee still at risk
 ------------------------------------------------------------------------------
-    28    Rs 85,839.47   RE_MANDATE_LINK
+    29    Rs 88,338.47   RE_MANDATE_LINK
         mandate dead: send a new mandate registration link
      2    Rs 73,653.24   AFA_PAYMENT_LINK
         above the RBI AFA-free cap: customer-present link with AFA
@@ -79,7 +79,7 @@ ESCALATION QUEUE - the compliant next step for every rupee still at risk
         budget exhausted: fresh invoice + winback nudge
      6     Rs 4,494.00   MANDATE_UPGRADE
         above the mandate's cap: request an upgrade or split it
-     4     Rs 3,996.00   HUMAN_REVIEW
+     3     Rs 1,497.00   HUMAN_REVIEW
         unclassifiable: a person reads the bank's own text
 
   baseline: 71 unrecovered records, 0 escalations. It halts them silently, which is the actual
@@ -91,12 +91,21 @@ FAILURE MIX
 ------------------------------------------------------------------------------
   INSUFFICIENT_FUNDS       53 records,  15 recovered
   BANK_DOWNTIME            14 records,   9 recovered
-  MANDATE_REVOKED           9 records,   0 recovered
+  MANDATE_REVOKED          10 records,   0 recovered
   TECHNICAL_ERROR           6 records,   1 recovered
   LIMIT_EXCEEDED            6 records,   0 recovered
   MANDATE_EXPIRED           5 records,   0 recovered
-  UNKNOWN                   4 records,   0 recovered
+  UNKNOWN                   3 records,   0 recovered
   MANDATE_PAUSED            3 records,   0 recovered
+
+------------------------------------------------------------------------------
+AI USAGE
+------------------------------------------------------------------------------
+  LLM calls made               : 24
+  Agreement with the dict      : 20/20 (sampled head, scoring only)
+  Records classified by the LLM: 1 (unmapped tail)
+  Left UNKNOWN -> human review : 3
+  No language model participated in any decision to move money.
 
 ------------------------------------------------------------------------------
 CONTROLS
