@@ -115,7 +115,7 @@ export default function BatchPage() {
               numbers on this page are identical, and why there is no
               adjustment left to argue about.
             </p>
-            <p className="mt-3 text-[13.5px] leading-relaxed text-ink-mute">
+            <p className="mt-3 text-[13.5px] leading-relaxed text-ink-soft">
               An earlier build credited the baseline with{" "}
               <span className="tnum">₹73,653.24</span> of above-cap recoveries
               and subtracted them in the report. That made the compliance

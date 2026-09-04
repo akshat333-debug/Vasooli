@@ -35,7 +35,13 @@ const RULES = [
   { n: 8, test: "Eligible, schedule at the best moment", action: "RETRY_SCHEDULED" },
 ];
 
-export default function RecordExplorer({ records }: { records: BatchRecord[] }) {
+export default function RecordExplorer({
+  records,
+  seed,
+}: {
+  records: BatchRecord[];
+  seed: number;
+}) {
   // Filters live in the URL so a filtered view can be linked and shared. The
   // expanded row does not: which record someone had open is not a view worth
   // sending anyone, and putting it in the URL would rewrite history on every
@@ -148,7 +154,7 @@ export default function RecordExplorer({ records }: { records: BatchRecord[] }) 
         {/* The rows behind the view, in whatever state it is filtered to. A
             reader who doubts a figure should be able to recompute it rather
             than take it. */}
-        <DownloadData records={shown} label="Download this view as CSV" />
+        <DownloadData records={shown} seed={seed} label="Download this view as CSV" />
       </div>
     </>
   );

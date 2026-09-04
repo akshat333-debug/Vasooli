@@ -152,7 +152,7 @@ export default function EscalationQueue({
                 <span className="font-mono text-[12px] tracking-tight text-ink">
                   {route}
                 </span>
-                <span className="rounded bg-paper-sunk px-1.5 py-px font-mono text-[10.5px] text-ink-mute">
+                <span className="rounded bg-paper-sunk px-1.5 py-px font-mono text-[10.5px] text-ink-soft">
                   {OWNER[route] ?? "Unassigned"}
                 </span>
               </span>

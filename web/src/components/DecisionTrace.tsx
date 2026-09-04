@@ -55,8 +55,8 @@ export default function DecisionTrace({
                   n === r.rule_fired
                     ? "bg-ink text-paper"
                     : n < r.rule_fired
-                      ? "bg-paper-sunk text-ink-faint"
-                      : "text-ink-faint/50"
+                      ? "bg-paper-sunk text-ink-soft"
+                      : "text-ink-mute"
                 }`}
               >
                 {n}

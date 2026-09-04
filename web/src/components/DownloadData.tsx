@@ -1,6 +1,6 @@
 "use client";
 
-import { batch, type BatchRecord } from "@/lib/data";
+import { type BatchRecord } from "@/lib/data";
 
 /**
  * Hand over the underlying rows.
@@ -10,6 +10,12 @@ import { batch, type BatchRecord } from "@/lib/data";
  * suspects a figure can open the CSV and recompute it, and one who does not can
  * ignore this entirely. Built in the browser from the same batch.json the page
  * renders, so the download cannot disagree with what is on screen.
+ *
+ * `seed` arrives as a prop rather than being imported from lib/data. Importing
+ * it there pulled the whole 480 KB batch payload into the records page's CLIENT
+ * bundle for the sake of one number in a filename, taking its first-load JS
+ * from 105 KB to 147 KB. The rows are already handed down as props by the
+ * server component; the seed travels the same way.
  */
 
 const COLUMNS: { key: string; get: (r: BatchRecord) => string | number }[] = [
@@ -49,9 +55,11 @@ function csv(records: BatchRecord[]): string {
 
 export default function DownloadData({
   records,
+  seed,
   label = "Download these rows as CSV",
 }: {
   records: BatchRecord[];
+  seed: number;
   label?: string;
 }) {
   const download = () => {
@@ -59,7 +67,7 @@ export default function DownloadData({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `vasooli-batch${batch.meta.seed}-${records.length}-records.csv`;
+    a.download = `vasooli-batch${seed}-${records.length}-records.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };

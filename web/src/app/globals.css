@@ -37,9 +37,11 @@
   --color-mustard: #d9ac43;
   --color-mustard-soft: #f0deb0;
   --color-clay: #b5533f;
-  /* Clay is a fill colour; as TEXT on a clay-soft ground it measured
-     4.01:1. This darker cut is 4.97:1 and is used for clay lettering. */
-  --color-clay-ink: #963d2a;
+  /* Clay is a fill colour; as TEXT on a clay-soft ground it measured 4.01:1.
+     #963d2a fixed that on the solid tint but still read 4.32:1 as an 11px
+     eyebrow over clay-soft at 35% opacity, which is the ground the compliance
+     card actually uses. Darkened again to clear 4.5 there too. */
+  --color-clay-ink: #7d3222;
   --color-clay-soft: #e8c3ba;
 
   --font-display: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;

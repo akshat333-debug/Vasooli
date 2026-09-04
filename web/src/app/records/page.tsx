@@ -26,7 +26,7 @@ export default function RecordsPage() {
           </p>
         }
       >
-        <RecordExplorer records={batch.records} />
+        <RecordExplorer records={batch.records} seed={batch.meta.seed} />
       </Suspense>
     </div>
   );
