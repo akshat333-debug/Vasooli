@@ -15,69 +15,93 @@ HEADLINE - compliance-adjusted (what automation may lawfully do alone)
 ------------------------------------------------------------------------------
                                 baseline       sequencer           delta
   recovered                 Rs 57,571.00    Rs 58,875.00     Rs 1,304.00
-  attempts spent                     165              77             -88
-  wasted attempts                    134              52             -82
-  recovered / attempt          Rs 348.92       Rs 764.61       Rs 415.70
+  attempts spent                     160              77             -83
+  wasted attempts                    131              52             -79
+  recovered / attempt          Rs 359.82       Rs 764.61       Rs 404.79
+  breaker refusals                     3               0              -3
+  recoverable halted                  27              22              -5
+    their monthly value     Rs 42,573.00    Rs 29,378.00   Rs -13,195.00
 
   Headline metric is recovery per attempt, because the retry budget is
   the scarce resource - three attempts, then the subscription halts.
+  'Recoverable halted' is what that costs in customers: a live mandate,
+  a recoverable failure, an amount inside both caps, and every attempt
+  burned anyway. Each one is a subscription Razorpay marks halted. The
+  sequencer's preserved attempts are what keep these alive next cycle.
 
 ------------------------------------------------------------------------------
-RAW TOTALS - shown for honesty, not as the claim
+BASIS - raw and compliance-adjusted, side by side
 ------------------------------------------------------------------------------
-  baseline  recovered Rs 131,224.24  (of which Rs 73,653.24 came from debits above the RBI standard cap)
-  sequencer recovered Rs 58,875.00  (of which Rs 0.00 came from debits above the RBI standard cap)
-  raw recovered / attempt: baseline Rs 795.30, sequencer Rs 764.61
-  (both numerators include above-cap debits; shown so the adjusted
-   headline above can be checked against the unadjusted figures)
+  baseline  raw Rs 57,571.00   adjusted Rs 57,571.00   above the cap Rs 0.00
+  sequencer raw Rs 58,875.00   adjusted Rs 58,875.00   above the cap Rs 0.00
 
-  NOTE: the baseline's raw total is higher only because it made
-  unattended debits above the cap. Those are not recoveries a merchant
-  may bank; they are compliance failures. Hence the adjusted headline.
+  These now coincide, and that is the finding. An earlier version of
+  this engine credited the baseline with above-cap recoveries and the
+  report subtracted them afterwards - which meant the compliance
+  headline was correcting a simulator error, not measuring a behaviour.
+  Three independent layers refuse an above-cap debit now: the stopping
+  rule declines it, the money-side breaker refuses it at the boundary,
+  and the world declines it on presentation because RBI requires AFA.
+  So there is one basis, no adjustment to argue about, and the number
+  above stands on its own.
 
 ------------------------------------------------------------------------------
 EXCEPTION LIST - every record not recovered by the sequencer
 ------------------------------------------------------------------------------
-    22    Rs 29,378.00   all available attempts spent without recovery
-    13    Rs 21,587.00   stopped: retry budget exhausted (3/3)
-     9    Rs 11,891.00   stopped at execution: mandate revoked after the decision was made
-     9    Rs 17,591.00   stopped: MANDATE_REVOKED
-     5     Rs 3,495.00   stopped: mandate is revoked despite a INSUFFICIENT_FUNDS failure
-     5     Rs 4,195.00   stopped: LIMIT_EXCEEDED
-     4     Rs 6,396.00   stopped: MANDATE_EXPIRED
-     3     Rs 1,497.00   human review: failure could not be classified by dict or model
-     2    Rs 48,965.47   stopped: MANDATE_PAUSED
-     1       Rs 299.00   human review: amount ₹299.00 exceeds the mandate cap ₹209.30
-     1    Rs 31,045.08   human review: amount ₹31,045.08 exceeds the RBI e-mandate standard cap
-     1    Rs 42,608.16   human review: amount ₹42,608.16 exceeds the RBI e-mandate standard cap
+    22    Rs 29,378.00   rule 8 / WINBACK_CAMPAIGN
+        all available attempts spent without recovery
+    14    Rs 15,386.00   rule 3 / RE_MANDATE_LINK
+        stopped at execution: mandate revoked after the decision was made
+    14    Rs 70,453.47   rule 2 / RE_MANDATE_LINK
+        stopped: MANDATE_REVOKED
+    13    Rs 21,587.00   rule 1 / WINBACK_CAMPAIGN
+        stopped: retry budget exhausted (3/3)
+     5     Rs 4,195.00   rule 2 / MANDATE_UPGRADE
+        stopped: LIMIT_EXCEEDED
+     4     Rs 3,996.00   rule 4 / HUMAN_REVIEW
+        human review: failure could not be classified by dict or model
+     2    Rs 73,653.24   rule 6 / AFA_PAYMENT_LINK
+        escalated: amount ₹31,045.08 exceeds the RBI e-mandate AFA-free cap
+     1       Rs 299.00   rule 5 / MANDATE_UPGRADE
+        human review: amount ₹299.00 exceeds the mandate cap ₹209.30
 
   75 of 100 records unrecovered, Rs 218,947.71 still at risk.
   Attempts preserved by refusing to act: 86
+
+------------------------------------------------------------------------------
+ESCALATION QUEUE - the compliant next step for every rupee still at risk
+------------------------------------------------------------------------------
+    28    Rs 85,839.47   RE_MANDATE_LINK
+        mandate dead: send a new mandate registration link
+     2    Rs 73,653.24   AFA_PAYMENT_LINK
+        above the RBI AFA-free cap: customer-present link with AFA
+    35    Rs 50,965.00   WINBACK_CAMPAIGN
+        budget exhausted: fresh invoice + winback nudge
+     6     Rs 4,494.00   MANDATE_UPGRADE
+        above the mandate's cap: request an upgrade or split it
+     4     Rs 3,996.00   HUMAN_REVIEW
+        unclassifiable: a person reads the bank's own text
+
+  baseline: 71 unrecovered records, 0 escalations. It halts them silently, which is the actual
+  failure mode this project is about - refusing to debit is only half an
+  answer, because the rupee is still owed.
 
 ------------------------------------------------------------------------------
 FAILURE MIX
 ------------------------------------------------------------------------------
   INSUFFICIENT_FUNDS       53 records,  15 recovered
   BANK_DOWNTIME            14 records,   9 recovered
-  MANDATE_REVOKED          10 records,   0 recovered
+  MANDATE_REVOKED           9 records,   0 recovered
   TECHNICAL_ERROR           6 records,   1 recovered
   LIMIT_EXCEEDED            6 records,   0 recovered
   MANDATE_EXPIRED           5 records,   0 recovered
-  UNKNOWN                   3 records,   0 recovered
+  UNKNOWN                   4 records,   0 recovered
   MANDATE_PAUSED            3 records,   0 recovered
-
-------------------------------------------------------------------------------
-AI USAGE
-------------------------------------------------------------------------------
-  LLM calls made               : 24
-  Agreement with the dict      : 20/20 (sampled head, scoring only)
-  Records classified by the LLM: 1 (unmapped tail)
-  Left UNKNOWN -> human review : 3
-  No language model participated in any decision to move money.
 
 ------------------------------------------------------------------------------
 CONTROLS
 ------------------------------------------------------------------------------
-  Audit chain verified : INTACT (455 rows)
+  Audit chain verified : INTACT (453 rows)
+    chain intact, unkeyed — detects accidental edits, but anyone with write access could rebuild it; set VASOOLI_LEDGER_KEY to prevent that
   Batch breaker        : not tripped
 ==============================================================================

@@ -22,7 +22,7 @@ from .diagnose import diagnose_batch
 from .execute import BatchResult, run_batch
 from .ledger import Ledger
 from .models import MAX_RETRY_BUDGET, AtRiskRecord
-from .report import compliance_split
+from .report import ESCALATION_LABEL, compliance_split, pushed_to_halt
 from .sim.seed import BATCH_NOW, generate_batch
 
 
@@ -38,6 +38,8 @@ def _arm_payload(res: BatchResult, records: list[AtRiskRecord]) -> dict[str, Any
         "soft_warnings": res.soft_warnings,
         "attempts_spent": res.attempts_spent,
         "wasted_attempts": res.wasted_attempts,
+        "breaker_refusals": res.breaker_refusals,
+        "pushed_to_halt": [o.model_dump(mode="json") for o in pushed_to_halt(res, records)],
         "value_at_risk_paise": res.value_at_risk_paise,
         "value_recovered_paise": res.value_recovered_paise,
         "recovered_within_envelope_paise": within,
@@ -108,6 +110,8 @@ def build_payload(
             "diagnosis_rationale": diag.rationale,
             "action": dec.action.value,
             "rule_fired": dec.rule_fired,
+            "escalation": dec.escalation.value,
+            "escalation_label": ESCALATION_LABEL.get(dec.escalation.value, ""),
             "verdict": dec.verdict,
             "scheduled_at": dec.scheduled_at.isoformat() if dec.scheduled_at else None,
             "expected_success": dec.expected_success,
@@ -122,6 +126,8 @@ def build_payload(
                 "attempts_spent": s.attempts_spent if s else 0,
                 "attempts_preserved": s.attempts_preserved if s else 0,
                 "terminal_reason": s.terminal_reason if s else "not processed",
+                "rule_fired": s.rule_fired if s else 0,
+                "escalation": s.escalation.value if s else "NONE",
             },
         })
 
@@ -172,6 +178,7 @@ def build_payload(
             "strength": verify.strength,
             "entries": entries,
         },
+        "escalation_labels": ESCALATION_LABEL,
         "llm": llm_stats,
         "scenarios": build_scenarios(n, seed),
     }
@@ -246,6 +253,7 @@ def build_scenarios(n: int = 100, seed: int = 42) -> list[dict[str, Any]]:
             "disabled_rules": sc["disabled_rules"],
             "attempts_spent": res.attempts_spent,
             "wasted_attempts": res.wasted_attempts,
+            "breaker_refusals": res.breaker_refusals,
             "recovered_within_envelope_paise": within,
             "recovered_above_cap_paise": over,
             "adjusted_paise_per_attempt": (

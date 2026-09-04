@@ -114,15 +114,25 @@ def test_disabling_a_rule_never_reduces_attempts():
             assert r["attempts"] >= base - 0.01, f"rule {r['rule']} reduced attempts"
 
 
-def test_only_the_rbi_rule_produces_above_cap_debits_when_removed():
+def test_no_rule_ablation_ever_produces_an_above_cap_recovery():
+    # Defence in depth. Removing rule 6 removes the DECISION-layer refusal, and
+    # nothing above the cap is recovered anyway, because two further layers
+    # still refuse: the money-side breaker at the action boundary, and the
+    # world, which declines an unattended debit that RBI requires AFA for.
     rows = ablate([1, 2, 3], n=60)
     for r in rows:
-        if r["rule"] == 6:
-            assert r["above_cap_paise"] > 0, "rule 6 removal should breach the cap"
-        else:
-            assert r["above_cap_paise"] == 0, (
-                f"rule {r['rule']} removal produced above-cap debits"
-            )
+        assert r["above_cap_paise"] == 0, (
+            f"rule {r['rule']} removal produced an above-cap recovery"
+        )
+
+
+def test_removing_the_rbi_rule_pushes_the_cost_onto_the_breaker():
+    # The cost of losing rule 6 is real, it just lands one layer down: the
+    # breaker starts refusing debits the decision layer used to catch.
+    rows = ablate([1, 2, 3], n=60)
+    base = next(r for r in rows if r["rule"] == 0)["breaker_refusals"]
+    off6 = next(r for r in rows if r["rule"] == 6)["breaker_refusals"]
+    assert off6 > base, "rule 6 removal should push refusals onto the breaker"
 
 
 # --- calibration ------------------------------------------------------------------

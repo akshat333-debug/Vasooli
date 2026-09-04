@@ -73,7 +73,12 @@ class AtRiskRecord(BaseModel):
 
     #: Day of month the customer's balance typically replenishes. Drives retry
     #: timing for INSUFFICIENT_FUNDS. Synthetic; a real system would learn this.
-    salary_day: int = Field(ge=1, le=28)
+    #:
+    #: None means UNKNOWN, not "the 1st". A live Razorpay event carries no such
+    #: field, and defaulting it to a day meant the engine scheduled live records
+    #: around a payday it had invented. Unknown schedules at the legal floor and
+    #: says so in the verdict.
+    salary_day: int | None = Field(default=None, ge=1, le=28)
 
     @property
     def attempts_remaining(self) -> int:

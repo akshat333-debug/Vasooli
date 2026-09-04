@@ -7,21 +7,29 @@ VASOOLI - EXPERIMENTS
 1. SEED SWEEP - is the headline an artefact of seed 42?
 ----------------------------------------------------------------------------
   sequencer led on recovery-per-attempt in 40/40 seeds
-  median delta  +126.2%
-  5th pct       +68.6%
-  95th pct      +228.6%
-  worst seed    +52.2%
+  median delta  +114.3%
+  5th pct       +63.2%
+  95th pct      +216.0%
+  worst seed    +50.4%
   losing seeds  none
+
+  1b. GROSS RECOVERY - the same sweep without the compliance adjustment
+  sequencer led on GROSS recovery-per-attempt in 40/40 seeds
+  median gross delta  +114.3%
+  gross losing seeds  none
+  The two bases now agree, because nothing above the RBI cap is
+  recovered by either arm - the network declines it. The adjustment is
+  no longer doing any work, which is a better answer than defending it.
 
 ----------------------------------------------------------------------------
 2. ATTRIBUTION - is the advantage timing, or refusal?
 ----------------------------------------------------------------------------
-  A  baseline                    Rs   283.24/attempt (133 attempts)
+  A  baseline                    Rs   303.07/attempt (159 attempts)
   B  refusals, naive timing      Rs   589.47/attempt (82 attempts)
   C  refusals + optimal timing   Rs   652.99/attempt (76 attempts)
 
-  from REFUSING  Rs  306.23/attempt (83% of the gain)
-  from TIMING    Rs   63.52/attempt (17% of the gain)
+  from REFUSING  Rs  286.41/attempt (82% of the gain)
+  from TIMING    Rs   63.52/attempt (18% of the gain)
 
   Refusing doomed attempts is the dominant mechanism. Timing helps, but
   it is the smaller half by a wide margin - worth saying plainly rather
@@ -32,15 +40,15 @@ VASOOLI - EXPERIMENTS
 ----------------------------------------------------------------------------
   replenishment gap as assumed: 0.44
       gap   median delta   win rate
-    0.440         126.2%       100%
-    0.385         122.9%       100%
-    0.330         117.5%       100%
-    0.275         115.3%       100%
-    0.220         113.9%       100%
-    0.165         110.3%       100%
-    0.110         106.5%       100%
-    0.055         108.0%       100%
-    0.000         105.2%       100%
+    0.440         114.3%       100%
+    0.385         112.6%       100%
+    0.330         104.5%       100%
+    0.275         103.6%       100%
+    0.220         101.3%       100%
+    0.165          97.4%       100%
+    0.110          94.8%       100%
+    0.055          91.7%       100%
+    0.000          90.7%       100%
 
   The advantage survives closing the payday gap entirely, which is
   consistent with the attribution above: most of it never depended
@@ -49,29 +57,50 @@ VASOOLI - EXPERIMENTS
 ----------------------------------------------------------------------------
 4. RULE ABLATION - what is each stopping rule worth?
 ----------------------------------------------------------------------------
-  rule  name                                    attempts   wasted   above cap
-     0  all rules on                                76.3     44.2           0
-     1  Retry budget exhausted                      81.7     47.4           0
-     2  Terminal failure class                      81.2     49.1           0
-     3  Mandate not active                          84.8     52.6           0
-     4  Failure unclassified                        81.7     49.5           0
-     5  Above the mandate's own cap                 83.6     51.5           0
-     6  Above the RBI standard cap                  82.3     47.5      86,599
-     7  Mandate expires before notice elapses       76.3     44.2           0
+  rule  name                                    attempts   wasted   above cap  refusals
+     0  all rules on                                76.3     44.2           0       0.0
+     1  Retry budget exhausted                      76.3     44.2           0       5.9
+     2  Terminal failure class                      81.2     49.1           0       0.0
+     3  Mandate not active                          76.3     44.2           0       0.0
+     4  Failure unclassified                        81.7     49.5           0       0.0
+     5  Above the mandate's own cap                 83.6     51.5           0       0.0
+     6  Above the RBI standard cap                  76.3     44.2           0       4.8
+     7  Mandate expires before notice elapses       76.3     44.2           0       0.0
 
   Row 0 is every rule on. Each other row is that rule switched off.
   Higher attempts or wasted counts are the cost of removing it.
+
+  'above cap' is Rs 0 on every row, INCLUDING rule 6 off. That is
+  defence in depth, not a broken ablation: with the stopping rule gone,
+  the money-side breaker refuses the debit at the action boundary and
+  the network would decline it anyway for want of AFA. The cost of
+  losing rule 6 shows up one layer down, in the refusals column.
 
 ----------------------------------------------------------------------------
 5. CALIBRATION - do the reported probabilities mean anything?
 ----------------------------------------------------------------------------
       bucket      n   predicted   observed
-     0.0-0.2    340       0.166      0.171
-     0.4-0.6    889       0.512      0.513
-     0.6-0.8    752       0.633      0.644
-     0.8-1.0    185       0.810      0.751
+     0.0-0.2    340       0.166      0.165
+     0.4-0.6    889       0.512      0.474
+     0.6-0.8    752       0.633      0.582
+     0.8-1.0    185       0.810      0.670
 
   Internal consistency only: predictions and outcomes come from the same
   assumed model, so agreement shows the scheduler reads its own model
   correctly. It is not evidence about real banks.
+
+----------------------------------------------------------------------------
+6. HAZARD REMOVED - does the result depend on late revocation?
+----------------------------------------------------------------------------
+  Re-run with LATE_REVOCATION_RATE = 0, so no mandate dies between the
+  decision and the debit and the pre-flight status call can preserve
+  nothing. If the headline were really that hazard, it collapses here.
+
+  A  baseline                    Rs   334.53/attempt (156 attempts)
+  B  refusals, naive timing      Rs   589.80/attempt (89 attempts)
+  C  refusals + optimal timing   Rs   654.91/attempt (83 attempts)
+
+  total gain     Rs  320.39/attempt   (with the hazard: Rs 349.92)
+  from REFUSING  Rs  255.28/attempt (80% of the gain)
+  from TIMING    Rs   65.11/attempt (20% of the gain)
 ============================================================================

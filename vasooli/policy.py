@@ -36,6 +36,23 @@ class RecoveryTripped(Exception):
         self.state = state
 
 
+class ActionRefused(Exception):
+    """One debit was refused at the boundary. The batch continues.
+
+    Distinct from RecoveryTripped, which halts the whole run. A PER-DEBIT limit
+    that tripped the batch would truncate the measurement it is supposed to
+    protect — that was defect 2, where a batch ceiling cut the comparison off at
+    60 actions and the report presented the prefix as a result.
+
+    So: per-debit limits refuse the action and record why; aggregate limits trip.
+    """
+
+    def __init__(self, verdict: str, state: RecoveryState) -> None:
+        super().__init__(verdict)
+        self.verdict = verdict
+        self.state = state
+
+
 @dataclass(frozen=True)
 class RecoveryPolicy:
     """Hard limits on what automation may do with money, unsupervised."""
@@ -69,6 +86,7 @@ class RecoveryState:
     actions_taken: int = 0
     value_attempted_paise: int = 0
     value_recovered_paise: int = 0
+    refusals: int = 0
     soft_warnings: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, int]:
@@ -76,6 +94,7 @@ class RecoveryState:
             "actions_taken": self.actions_taken,
             "value_attempted_paise": self.value_attempted_paise,
             "value_recovered_paise": self.value_recovered_paise,
+            "refusals": self.refusals,
         }
 
 
@@ -86,10 +105,12 @@ class RecoveryFuse:
         self.policy = policy or RecoveryPolicy()
         self.state = RecoveryState()
 
-    def check(self, amount_paise: int) -> None:
+    def check(self, amount_paise: int, *, attempts_on_subscription: int = 0) -> None:
         """Assert the batch may attempt one more debit of this size.
 
-        Raises RecoveryTripped. Called at the action boundary in execute.py.
+        Raises ActionRefused for a per-debit limit (this action is refused, the
+        batch continues) and RecoveryTripped for an aggregate ceiling (the run
+        stops). Called at the action boundary in execute.py.
         """
         p, s = self.policy, self.state
 
@@ -103,6 +124,29 @@ class RecoveryFuse:
                 s,
             )
 
+        # PER-DEBIT LIMITS. Both of these were declared on RecoveryPolicy with
+        # comments asserting they were limits, and enforced by nothing (defect
+        # 18) — the same shape as RunFuse's inert cost cap. A limit that does not
+        # trip is decoration.
+        if amount_paise > p.max_auto_amount_paise:
+            s.refusals += 1
+            raise ActionRefused(
+                f"refused: ₹{amount_paise / 100:,.2f} exceeds the unattended cap "
+                f"₹{p.max_auto_amount_paise / 100:,.2f} — this debit needs AFA and "
+                "will not be presented unattended",
+                s,
+            )
+
+        if attempts_on_subscription + 1 > p.max_attempts_per_subscription:
+            s.refusals += 1
+            raise ActionRefused(
+                f"refused: attempt {attempts_on_subscription + 1} would exceed the "
+                f"{p.max_attempts_per_subscription}-attempt budget on this "
+                "subscription — a further attempt halts it",
+                s,
+            )
+
+        # AGGREGATE LIMITS. These stop the run.
         if s.actions_taken + 1 > p.max_actions_per_batch:
             raise RecoveryTripped(
                 f"max_actions_per_batch: {s.actions_taken + 1} > {p.max_actions_per_batch} "

@@ -20,8 +20,19 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from typing import Any
 
-from .execute import BatchResult
-from .models import AtRiskRecord
+from .execute import BatchResult, RecordOutcome
+from .models import AtRiskRecord, MandateStatus
+from .taxonomy import is_recoverable
+
+#: What a merchant actually does with each escalation route. The report prints
+#: the route AND the instruction, because an enum value is not an action.
+ESCALATION_LABEL = {
+    "WINBACK_CAMPAIGN": "budget exhausted: fresh invoice + winback nudge",
+    "RE_MANDATE_LINK": "mandate dead: send a new mandate registration link",
+    "MANDATE_UPGRADE": "above the mandate's cap: request an upgrade or split it",
+    "AFA_PAYMENT_LINK": "above the RBI AFA-free cap: customer-present link with AFA",
+    "HUMAN_REVIEW": "unclassifiable: a person reads the bank's own text",
+}
 
 
 def _rs(paise: float) -> str:
@@ -40,6 +51,27 @@ def compliance_split(result: BatchResult, records: list[AtRiskRecord]) -> tuple[
         else:
             within += o.amount_paise
     return within, over
+
+
+def pushed_to_halt(result: BatchResult, records: list[AtRiskRecord]) -> list[RecordOutcome]:
+    """Recoverable subscriptions this arm drove to `halted`.
+
+    A record counts when the mandate was live, the class was recoverable, the
+    amount sat inside both caps, attempts were actually spent, and none landed.
+    Razorpay halts a subscription once its budget is gone, and a halted
+    subscription is a customer lost — so this is the rupee meaning of
+    "attempts preserved", which is otherwise an abstraction.
+    """
+    by = {r.subscription_id: r for r in records}
+    out = []
+    for o in result.outcomes:
+        r = by[o.subscription_id]
+        if (not o.recovered and o.attempts_spent > 0 and o.attempts_preserved <= 0
+                and r.mandate_status is MandateStatus.ACTIVE
+                and is_recoverable(o.failure_class)
+                and not r.exceeds_mandate_cap and not r.needs_human_approval):
+            out.append(o)
+    return out
 
 
 def render(
@@ -105,46 +137,83 @@ def render(
     bpa = (b_in / baseline.attempts_spent) if baseline.attempts_spent else 0.0
     spa = (s_in / sequencer.attempts_spent) if sequencer.attempts_spent else 0.0
     add(f"  {'recovered / attempt':22}{_rs(bpa):>16}{_rs(spa):>16}{_rs(spa - bpa):>16}")
+    add(f"  {'breaker refusals':22}{baseline.breaker_refusals:>16}"
+        f"{sequencer.breaker_refusals:>16}"
+        f"{sequencer.breaker_refusals - baseline.breaker_refusals:>16}")
+    b_halt, s_halt = pushed_to_halt(baseline, records), pushed_to_halt(sequencer, records)
+    b_hv = sum(o.amount_paise for o in b_halt)
+    s_hv = sum(o.amount_paise for o in s_halt)
+    add(f"  {'recoverable halted':22}{len(b_halt):>16}{len(s_halt):>16}"
+        f"{len(s_halt) - len(b_halt):>16}")
+    add(f"  {'  their monthly value':22}{_rs(b_hv):>16}{_rs(s_hv):>16}{_rs(s_hv - b_hv):>16}")
     add("")
     add("  Headline metric is recovery per attempt, because the retry budget is")
     add("  the scarce resource - three attempts, then the subscription halts.")
+    add("  'Recoverable halted' is what that costs in customers: a live mandate,")
+    add("  a recoverable failure, an amount inside both caps, and every attempt")
+    add("  burned anyway. Each one is a subscription Razorpay marks halted. The")
+    add("  sequencer's preserved attempts are what keep these alive next cycle.")
     add("")
 
     add("-" * 78)
-    add("RAW TOTALS - shown for honesty, not as the claim")
+    add("BASIS - raw and compliance-adjusted, side by side")
     add("-" * 78)
-    add(f"  baseline  recovered {_rs(baseline.value_recovered_paise)}"
-        f"  (of which {_rs(b_over)} came from debits above the RBI standard cap)")
-    add(f"  sequencer recovered {_rs(sequencer.value_recovered_paise)}"
-        f"  (of which {_rs(s_over)} came from debits above the RBI standard cap)")
-    rb = baseline.paise_per_attempt
-    rs_ = sequencer.paise_per_attempt
-    add(f"  raw recovered / attempt: baseline {_rs(rb)}, sequencer {_rs(rs_)}")
-    add("  (both numerators include above-cap debits; shown so the adjusted")
-    add("   headline above can be checked against the unadjusted figures)")
-    if b_over > s_over:
-        add("")
-        add("  NOTE: the baseline's raw total is higher only because it made")
-        add("  unattended debits above the cap. Those are not recoveries a merchant")
-        add("  may bank; they are compliance failures. Hence the adjusted headline.")
+    add(f"  baseline  raw {_rs(baseline.value_recovered_paise)}"
+        f"   adjusted {_rs(b_in)}   above the cap {_rs(b_over)}")
+    add(f"  sequencer raw {_rs(sequencer.value_recovered_paise)}"
+        f"   adjusted {_rs(s_in)}   above the cap {_rs(s_over)}")
+    add("")
+    add("  These now coincide, and that is the finding. An earlier version of")
+    add("  this engine credited the baseline with above-cap recoveries and the")
+    add("  report subtracted them afterwards - which meant the compliance")
+    add("  headline was correcting a simulator error, not measuring a behaviour.")
+    add("  Three independent layers refuse an above-cap debit now: the stopping")
+    add("  rule declines it, the money-side breaker refuses it at the boundary,")
+    add("  and the world declines it on presentation because RBI requires AFA.")
+    add("  So there is one basis, no adjustment to argue about, and the number")
+    add("  above stands on its own.")
     add("")
 
     add("-" * 78)
     add("EXCEPTION LIST - every record not recovered by the sequencer")
     add("-" * 78)
-    groups: dict[str, list] = defaultdict(list)
+    # Grouped on (rule, escalation), not on a prefix of the verdict. Rules 5
+    # and 6 interpolate the rupee amount before the separator, so string
+    # grouping put every above-cap record in a group of its own (defect 22).
+    groups: dict[tuple[int, str], list] = defaultdict(list)
     for o in sequencer.outcomes:
         if not o.recovered:
-            groups[o.terminal_reason.split(" - ")[0].split(" — ")[0]].append(o)
+            groups[(o.rule_fired, str(o.escalation))].append(o)
     total_unrec = sum(len(v) for v in groups.values())
     total_value = sum(o.amount_paise for v in groups.values() for o in v)
-    for reason, items in sorted(groups.items(), key=lambda kv: -len(kv[1])):
+    for (rule, esc), items in sorted(groups.items(), key=lambda kv: -len(kv[1])):
         val = sum(o.amount_paise for o in items)
-        add(f"  {len(items):>4}  {_rs(val):>14}   {reason}")
+        head = items[0].terminal_reason.split(" - ")[0].split(" — ")[0]
+        add(f"  {len(items):>4}  {_rs(val):>14}   rule {rule} / {esc}")
+        add(f"        {head}")
     add("")
     add(f"  {total_unrec} of {sequencer.records} records unrecovered, {_rs(total_value)} still at risk.")
     add(f"  Attempts preserved by refusing to act: "
         f"{sum(o.attempts_preserved for o in sequencer.outcomes if not o.recovered)}")
+    add("")
+
+    add("-" * 78)
+    add("ESCALATION QUEUE - the compliant next step for every rupee still at risk")
+    add("-" * 78)
+    queue: dict[str, list] = defaultdict(list)
+    for o in sequencer.outcomes:
+        if not o.recovered:
+            queue[str(o.escalation)].append(o)
+    for esc, items in sorted(queue.items(),
+                             key=lambda kv: -sum(o.amount_paise for o in kv[1])):
+        val = sum(o.amount_paise for o in items)
+        add(f"  {len(items):>4}  {_rs(val):>14}   {esc}")
+        add(f"        {ESCALATION_LABEL.get(esc, 'no route assigned')}")
+    add("")
+    add(f"  baseline: {sum(1 for o in baseline.outcomes if not o.recovered)} unrecovered "
+        "records, 0 escalations. It halts them silently, which is the actual")
+    add("  failure mode this project is about - refusing to debit is only half an")
+    add("  answer, because the rupee is still owed.")
     add("")
 
     add("-" * 78)

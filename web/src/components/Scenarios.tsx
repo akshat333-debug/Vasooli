@@ -24,8 +24,11 @@ export default function Scenarios({ scenarios }: { scenarios: Scenario[] }) {
       Math.round(active.adjusted_paise_per_attempt), true],
     ["Attempts spent", base.attempts_spent, active.attempts_spent, false],
     ["Wasted attempts", base.wasted_attempts, active.wasted_attempts, false],
-    ["Debited above the RBI cap", base.recovered_above_cap_paise,
-      active.recovered_above_cap_paise, true],
+    // Above-cap recovery is Rs 0 under every policy, because three layers
+    // refuse it and the last one is the network. The number that moves when a
+    // rule is switched off is what the layer BELOW it then has to catch.
+    ["Refused by the money breaker", base.breaker_refusals,
+      active.breaker_refusals, false],
   ];
 
   return (
@@ -84,9 +87,9 @@ export default function Scenarios({ scenarios }: { scenarios: Scenario[] }) {
             <tbody>
               {rows.map(([label, b, a, money]) => {
                 const delta = a - b;
-                // The only measure where a rise is unambiguously bad, because
-                // it is not revenue at all — it is a debit outside the envelope.
-                const breach = label.includes("above the RBI cap") && a > 0;
+                // A rise here means the decision layer stopped catching these
+                // and the breaker had to, one layer further down.
+                const breach = label.includes("Refused by") && a > b;
                 const fmt = (v: number) =>
                   money ? rupees(v) : String(v);
                 return (

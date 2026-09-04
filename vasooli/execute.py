@@ -21,9 +21,17 @@ draws.
 THE LATE-REVOCATION HAZARD
 
 A mandate can be revoked between the moment a retry is decided and the moment it
-is attempted. This is simulated for a deterministic subset of records. The
-sequencer re-checks mandate state at the action boundary and refuses; the
-baseline does not and burns an attempt.
+is attempted. This is a fact about the WORLD, and both arms live in the same one:
+`mandate_status_at()` decides it from the record alone and `_attempt()` consults
+it for either arm, so a debit presented against a revoked mandate fails whoever
+presented it.
+
+What differs is behaviour, not physics. The sequencer makes an explicit
+pre-flight status call at the action boundary and declines without spending an
+attempt; the baseline does not ask, spends the attempt, and learns the same fact
+from the rejection. An earlier version branched on the arm's NAME (defect 19),
+which made a property of the world look like a rule that happened to favour one
+arm — the exact criticism the comparison must not be open to.
 
 This mirrors RunFuse's reason for tripping at call boundaries rather than
 mid-tool: a check performed at the wrong moment lets the world change underneath
@@ -45,12 +53,19 @@ from datetime import datetime, timedelta
 
 from pydantic import BaseModel
 
-from .decide import Action, Decision, days_to_replenish, decide, earliest_legal_retry
+from .decide import (
+    Action,
+    Decision,
+    Escalation,
+    days_to_replenish,
+    decide,
+    earliest_legal_retry,
+)
 from .diagnose import diagnose_batch
 from .ledger import Ledger
 from .logging import event
 from .models import AtRiskRecord, Diagnosis, MandateStatus
-from .policy import RecoveryFuse, RecoveryPolicy, RecoveryTripped
+from .policy import ActionRefused, RecoveryFuse, RecoveryPolicy, RecoveryTripped
 from .sim.model import success_probability
 from .taxonomy import FailureClass
 
@@ -83,6 +98,17 @@ def _late_revocation(subscription_id: str, salt: str = "") -> bool:
     return (int(h[:16], 16) / float(1 << 64)) < LATE_REVOCATION_RATE
 
 
+def mandate_status_at(rec: AtRiskRecord, salt: str = "") -> MandateStatus:
+    """The mandate's state at execution time. The world, not the arm.
+
+    Takes no `arm` argument, deliberately: nothing observable to one arm may be
+    unobservable to the other. See the module docstring.
+    """
+    if _late_revocation(rec.subscription_id, salt):
+        return MandateStatus.REVOKED
+    return rec.mandate_status
+
+
 class RecordOutcome(BaseModel):
     subscription_id: str
     amount_paise: int
@@ -91,6 +117,12 @@ class RecordOutcome(BaseModel):
     attempts_spent: int
     attempts_preserved: int
     terminal_reason: str
+    #: Which numbered stopping rule ended this record, and where it routes next.
+    #: Grouping the exception list on these instead of on a prefix of the verdict
+    #: string is what stopped every above-cap record forming its own group
+    #: (defect 22) — the rupee amount is interpolated before the separator.
+    rule_fired: int = 0
+    escalation: Escalation = Escalation.NONE
 
 
 class BatchResult(BaseModel):
@@ -104,6 +136,7 @@ class BatchResult(BaseModel):
     attempts_spent: int
     wasted_attempts: int
     soft_warnings: list[str]
+    breaker_refusals: int = 0
     tripped: str | None = None
 
     @property
@@ -150,16 +183,23 @@ def _attempt(
       * A debit above the amount registered on the mandate is rejected on
         presentation.
 
-    This was a real bug. Without these two lines the baseline arm was credited
-    with recovering money from dead mandates and over-cap debits, which inflated
-    it against the sequencer. The bug flattered nothing about this project's own
-    thesis, which is exactly why it was worth finding: the sequencer's job is to
-    NOT attempt these, so letting them succeed in simulation destroyed the only
+      * A debit above the RBI AFA-free cap requires additional factor
+        authentication. Presented unattended, the issuer declines it.
+
+    This was a real bug, twice. Without the mandate and mandate-cap lines the
+    baseline was credited with recovering money from dead mandates and over-cap
+    debits. Without the AFA line it was credited with ₹73,653.24 the network
+    would never have released (defect 19) — and the "compliance-adjusted"
+    headline existed to subtract, in the report, money the simulator should
+    never have paid out in the first place. The sequencer's whole job is to not
+    attempt these, so letting them succeed in simulation destroyed the only
     advantage being measured.
     """
-    if rec.mandate_status is not MandateStatus.ACTIVE:
+    if mandate_status_at(rec, salt) is not MandateStatus.ACTIVE:
         return False
     if rec.exceeds_mandate_cap:
+        return False
+    if rec.needs_human_approval:
         return False
     if at > rec.mandate_valid_until:
         # Presented after the mandate's validity date. Rejected on presentation,
@@ -171,7 +211,8 @@ def _attempt(
         fc,
         attempt_index,
         hours_since_failure=(at - rec.last_attempt_at).total_seconds() / 3600.0,
-        days_to_replenish=days_to_replenish(at, rec.salary_day),
+        days_to_replenish=(days_to_replenish(at, rec.salary_day)
+                           if rec.salary_day is not None else 0),
     )
     return _draw(rec.subscription_id, attempt_index, salt) < p
 
@@ -221,6 +262,8 @@ def run_batch(
         spent = 0
         recovered = False
         reason = ""
+        escalation = Escalation.NONE
+        rule = 0
 
         if arm == "sequencer":
             decision = decide(rec, fc, now, disabled_rules=disabled_rules)
@@ -233,7 +276,9 @@ def run_batch(
                     subscription_id=rec.subscription_id, amount_paise=rec.amount_paise,
                     failure_class=fc, recovered=False, attempts_spent=0,
                     attempts_preserved=rec.attempts_remaining,
-                    terminal_reason=decision.verdict))
+                    terminal_reason=decision.verdict,
+                    rule_fired=decision.rule_fired,
+                    escalation=decision.escalation))
                 continue
             schedule = (
                 _sequencer_schedule(rec, fc, now, decision)
@@ -254,25 +299,41 @@ def run_batch(
         for i, at in enumerate(schedule):
             attempt_index = rec.attempts_used + i
             try:
-                fuse.check(rec.amount_paise)
+                fuse.check(rec.amount_paise, attempts_on_subscription=attempt_index)
+            except ActionRefused as r:
+                # One debit refused at the money boundary. The batch continues:
+                # a per-debit limit that tripped the run would truncate the
+                # comparison it exists to protect.
+                reason = r.verdict
+                escalation = Escalation.AFA_PAYMENT_LINK
+                rule = 6
+                ledger.append(run_id=run_id, arm=arm, event="breaker_refusal",
+                              verdict=r.verdict, subscription_id=rec.subscription_id,
+                              amount_paise=rec.amount_paise)
+                break
             except RecoveryTripped as t:
                 tripped = t.verdict
                 ledger.append(run_id=run_id, arm=arm, event="fuse_trip",
                               verdict=t.verdict, subscription_id=rec.subscription_id)
                 break
 
-            # Action boundary. State may have changed since the decision.
-            if arm == "sequencer" and _late_revocation(rec.subscription_id, draw_salt):
-                reason = ("stopped at execution: mandate revoked after the decision "
-                          "was made — attempt preserved by the pre-flight re-check")
-                ledger.append(run_id=run_id, arm=arm, event="preflight_refusal",
-                              verdict=reason, subscription_id=rec.subscription_id)
-                break
+            # Action boundary. The world may have moved since the decision, so
+            # the sequencer pays for a status call rather than paying with an
+            # attempt. The baseline makes no such call — and that, not a
+            # different world, is why it burns the attempt.
+            if arm == "sequencer":
+                live = mandate_status_at(rec, draw_salt)
+                if live is not MandateStatus.ACTIVE:
+                    reason = (f"stopped at execution: mandate {live.value} after the "
+                              "decision was made — attempt preserved by the "
+                              "pre-flight re-check")
+                    escalation = Escalation.RE_MANDATE_LINK
+                    rule = 3
+                    ledger.append(run_id=run_id, arm=arm, event="preflight_refusal",
+                                  verdict=reason, subscription_id=rec.subscription_id)
+                    break
 
             ok = _attempt(rec, fc, at, attempt_index, draw_salt)
-            if arm == "baseline" and _late_revocation(rec.subscription_id, draw_salt):
-                # No re-check: the debit is attempted against a dead mandate.
-                ok = False
 
             spent += 1
             attempts_spent += 1
@@ -291,8 +352,14 @@ def run_batch(
                 break
 
         if not reason:
-            reason = ("batch breaker tripped before this record finished"
-                      if tripped else "all available attempts spent without recovery")
+            if tripped:
+                reason = "batch breaker tripped before this record finished"
+            else:
+                reason = "all available attempts spent without recovery"
+                # The budget is now gone. This is the subscription Razorpay
+                # halts, and the only route left is winning the customer back.
+                escalation = Escalation.WINBACK_CAMPAIGN
+                rule = 8
 
         # Recorded even when the breaker tripped mid-record. Previously this
         # append was skipped on a trip, so attempts already spent on that record
@@ -302,7 +369,9 @@ def run_batch(
             subscription_id=rec.subscription_id, amount_paise=rec.amount_paise,
             failure_class=fc, recovered=recovered, attempts_spent=spent,
             attempts_preserved=rec.attempts_remaining - spent,
-            terminal_reason=reason))
+            terminal_reason=reason,
+            rule_fired=rule if arm == "sequencer" else 0,
+            escalation=escalation if arm == "sequencer" else Escalation.NONE))
 
         if tripped:
             break
@@ -313,7 +382,8 @@ def run_batch(
         value_at_risk_paise=sum(r.amount_paise for r in records),
         value_recovered_paise=fuse.state.value_recovered_paise,
         attempts_spent=attempts_spent, wasted_attempts=wasted,
-        soft_warnings=fuse.state.soft_warnings, tripped=tripped)
+        soft_warnings=fuse.state.soft_warnings,
+        breaker_refusals=fuse.state.refusals, tripped=tripped)
 
     event("execute.batch_complete", arm=arm, run_id=run_id,
           records=len(records), processed=len(outcomes),
@@ -331,7 +401,13 @@ def run_batch(
 def _sequencer_schedule(
     rec: AtRiskRecord, fc: FailureClass, now: datetime, first: Decision
 ) -> list[datetime]:
-    """Optimal first attempt, then re-scheduled follow-ups if it fails.
+    """Optimal first attempt, then fixed follow-ups if it fails.
+
+    SIMPLIFICATION, stated rather than hidden: the follow-ups are a fixed +7d
+    (insufficient funds) or +1d (everything else) rather than a fresh search,
+    and neither arm models a new 24h pre-debit notice per follow-up, which RBI
+    requires. Both arms are simplified identically, so the comparison is
+    unaffected; the absolute schedules are not production-legal as written.
 
     Follow-ups are truncated at the mandate's validity date for the same reason
     the first attempt is: a debit presented after expiry is rejected, so a

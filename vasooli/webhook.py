@@ -47,6 +47,7 @@ from typing import Any
 
 from .ledger import Ledger
 from .models import (
+    MAX_RETRY_BUDGET,
     AtRiskRecord,
     MandateStatus,
     Method,
@@ -114,7 +115,34 @@ def _payload_entity(payload: dict[str, Any], name: str) -> dict[str, Any]:
     return (payload.get("payload", {}).get(name, {}) or {}).get("entity", {}) or {}
 
 
-def to_record(event: dict[str, Any], now: datetime) -> AtRiskRecord:
+def prior_failures(ledger: Ledger, subscription_id: str) -> int:
+    """How many payment.failed events this subscription has already sent us.
+
+    A Razorpay subscription entity carries no retry counter. The previous line
+    here derived one from `paid_count`, which counts SUCCESSFUL charges (defect
+    20): a healthy subscription with ten paid cycles arrived looking exhausted
+    and was refused by rule 1 before anything else ran. Our own ledger is the
+    only honest source, since it records exactly the failures we were told about.
+    """
+    n = 0
+    for r in ledger.rows():
+        if r["event"] != "webhook_received":
+            continue
+        try:
+            payload = json.loads(r["payload"] or "{}")
+        except json.JSONDecodeError:
+            continue
+        if payload.get("subscription") == subscription_id:
+            n += 1
+    return n
+
+
+def to_record(
+    event: dict[str, Any],
+    now: datetime,
+    *,
+    attempts_used: int = 0,
+) -> AtRiskRecord:
     """Map a Razorpay event onto the engine's own record type.
 
     Everything absent from the event gets a conservative default rather than an
@@ -140,8 +168,6 @@ def to_record(event: dict[str, Any], now: datetime) -> AtRiskRecord:
         "paused": MandateStatus.PAUSED,
     }.get(status, MandateStatus.ACTIVE)
 
-    paid = int(sub.get("paid_count") or 0)
-    attempts_used = min(int(sub.get("remaining_count") is not None and paid or 0), 3)
 
     return AtRiskRecord(
         subscription_id=sub_id,
@@ -162,7 +188,7 @@ def to_record(event: dict[str, Any], now: datetime) -> AtRiskRecord:
         subscription_status=(
             SubscriptionStatus.HALTED if status == "halted" else SubscriptionStatus.ACTIVE
         ),
-        attempts_used=attempts_used,
+        attempts_used=min(attempts_used, MAX_RETRY_BUDGET),
         error_code=err_code,
         error_reason=err_reason,
         error_description=err_desc,
@@ -172,7 +198,8 @@ def to_record(event: dict[str, Any], now: datetime) -> AtRiskRecord:
         # No notice can be assumed from an event. Absent proof that one was
         # sent, the engine must schedule as though it has not been.
         pre_debit_notified_at=None,
-        salary_day=1,
+        # A webhook tells us nothing about when this customer gets paid.
+        salary_day=None,
     )
 
 
@@ -217,7 +244,12 @@ def ingest(
                       subscription_id=event_id)
         return Ingested(event_id, event_type, None, False, "event type not handled")
 
-    record = to_record(event, now)
+    sub_id = str(
+        _payload_entity(event, "subscription").get("id")
+        or _payload_entity(event, "payment").get("subscription_id")
+        or event.get("id")
+    )
+    record = to_record(event, now, attempts_used=prior_failures(ledger, sub_id))
     ledger.append(
         run_id=run_id, arm="webhook", event="webhook_received",
         verdict=(f"{event_type} accepted for {record.subscription_id}, "

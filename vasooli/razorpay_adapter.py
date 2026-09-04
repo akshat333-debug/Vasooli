@@ -230,6 +230,12 @@ def run_live_probe(
                 razorpay_subscription_id=sub["id"],
                 razorpay_plan_id=sub["_vasooli_plan_id"],
                 status=sub.get("status"),
+                # The real, live test-mode mandate registration link. This is
+                # the artefact behind the RE_MANDATE_LINK escalation: the
+                # engine does not merely say "get a new mandate", it has the
+                # URL a customer would authenticate at. Structured, not only
+                # narrated in the verdict, so a consumer can act on it.
+                mandate_registration_url=sub.get("short_url"),
             )
         except RazorpayUnavailable as e:
             ledger.append(

@@ -22,6 +22,7 @@ from .experiments import (
     calibration,
     decompose,
     find_breaking_point,
+    revocation_sensitivity,
     sweep,
 )
 from .export import write_payload
@@ -176,6 +177,15 @@ def _cmd_experiments(args: argparse.Namespace) -> int:
     add(f"  worst seed    {sw['worst_delta_pct']:+.1f}%")
     add(f"  losing seeds  {sw['losing_seeds'] or 'none'}")
     add("")
+    add("  1b. GROSS RECOVERY - the same sweep without the compliance adjustment")
+    add(f"  sequencer led on GROSS recovery-per-attempt in "
+        f"{sw['gross_wins']}/{sw['seeds']} seeds")
+    add(f"  median gross delta  {sw['gross_median_delta_pct']:+.1f}%")
+    add(f"  gross losing seeds  {sw['gross_losing_seeds'] or 'none'}")
+    add("  The two bases now agree, because nothing above the RBI cap is")
+    add("  recovered by either arm - the network declines it. The adjustment is")
+    add("  no longer doing any work, which is a better answer than defending it.")
+    add("")
 
     add("-" * 76)
     add("2. ATTRIBUTION - is the advantage timing, or refusal?")
@@ -219,13 +229,21 @@ def _cmd_experiments(args: argparse.Namespace) -> int:
     add("-" * 76)
     add("4. RULE ABLATION - what is each stopping rule worth?")
     add("-" * 76)
-    add(f"  {'rule':>4}  {'name':38} {'attempts':>9} {'wasted':>8} {'above cap':>11}")
+    add(f"  {'rule':>4}  {'name':38} {'attempts':>9} {'wasted':>8} "
+        f"{'above cap':>11} {'refusals':>9}")
     for r in ablate(seeds, args.n):
         add(f"  {r['rule']:>4}  {r['name'][:38]:38} {r['attempts']:>9.1f} "
-            f"{r['wasted']:>8.1f} {r['above_cap_paise'] / 100:>11,.0f}")
+            f"{r['wasted']:>8.1f} {r['above_cap_paise'] / 100:>11,.0f} "
+            f"{r['breaker_refusals']:>9.1f}")
     add("")
     add("  Row 0 is every rule on. Each other row is that rule switched off.")
     add("  Higher attempts or wasted counts are the cost of removing it.")
+    add("")
+    add("  'above cap' is Rs 0 on every row, INCLUDING rule 6 off. That is")
+    add("  defence in depth, not a broken ablation: with the stopping rule gone,")
+    add("  the money-side breaker refuses the debit at the action boundary and")
+    add("  the network would decline it anyway for want of AFA. The cost of")
+    add("  losing rule 6 shows up one layer down, in the refusals column.")
     add("")
 
     add("-" * 76)
@@ -238,6 +256,30 @@ def _cmd_experiments(args: argparse.Namespace) -> int:
     add("  Internal consistency only: predictions and outcomes come from the same")
     add("  assumed model, so agreement shows the scheduler reads its own model")
     add("  correctly. It is not evidence about real banks.")
+    add("")
+
+    add("-" * 76)
+    add("6. HAZARD REMOVED - does the result depend on late revocation?")
+    add("-" * 76)
+    rs_ = revocation_sensitivity(seeds, args.n)
+    add("  Re-run with LATE_REVOCATION_RATE = 0, so no mandate dies between the")
+    add("  decision and the debit and the pre-flight status call can preserve")
+    add("  nothing. If the headline were really that hazard, it collapses here.")
+    add("")
+    for key, label in (("A_baseline", "A  baseline"),
+                       ("B_refuse_only", "B  refusals, naive timing"),
+                       ("C_full", "C  refusals + optimal timing")):
+        v = rs_[key]
+        add(f"  {label:30} Rs {v['per_attempt_paise'] / 100:>8,.2f}/attempt "
+            f"({v['attempts']:.0f} attempts)")
+    ra = rs_["attribution"]
+    add("")
+    add(f"  total gain     Rs {ra['total_gain_per_attempt_paise'] / 100:>7,.2f}/attempt"
+        f"   (with the hazard: Rs {a['total_gain_per_attempt_paise'] / 100:,.2f})")
+    add(f"  from REFUSING  Rs {ra['from_refusing_paise'] / 100:>7,.2f}/attempt "
+        f"({ra['refusing_share']:.0%} of the gain)")
+    add(f"  from TIMING    Rs {ra['from_timing_paise'] / 100:>7,.2f}/attempt "
+        f"({ra['timing_share']:.0%} of the gain)")
     add("=" * 76)
 
     text = "\n".join(out)
@@ -377,7 +419,7 @@ def main(argv: list[str] | None = None) -> int:
     e.set_defaults(fn=_cmd_export)
 
     x = sub.add_parser("experiments", help="sweep, attribution, ablation, calibration")
-    x.add_argument("--seeds", type=int, default=30, help="run seeds 1..N")
+    x.add_argument("--seeds", type=int, default=40, help="run seeds 1..N")
     x.add_argument("-n", type=int, default=100)
     x.add_argument("--out", help="also write the results to this file")
     x.set_defaults(fn=_cmd_experiments)

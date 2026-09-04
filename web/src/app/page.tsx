@@ -1,4 +1,5 @@
 import AttemptLedger from "@/components/AttemptLedger";
+import EscalationQueue from "@/components/EscalationQueue";
 import ExceptionList from "@/components/ExceptionList";
 import Scenarios from "@/components/Scenarios";
 import { batch, rupees } from "@/lib/data";
@@ -83,32 +84,51 @@ export default function BatchPage() {
       >
         <div className="grid gap-6 p-6 sm:p-8 lg:grid-cols-[1.35fr_1fr] lg:gap-10">
           <div>
-            <p className="eyebrow mb-3 !text-clay-ink">Why the raw totals disagree</p>
+            <p className="eyebrow mb-3 !text-clay-ink">Three layers, one answer</p>
             <h2 className="display text-[21px] leading-snug font-semibold sm:text-[25px]">
-              On gross recovery the baseline wins. It wins by making a debit it
-              is not allowed to make.
+              The baseline burned {bl.breaker_refusals} attempts on debits the
+              network was never going to settle.
             </h2>
             <p className="mt-4 text-[14.5px] leading-relaxed text-ink-soft">
-              {rupees(bl.recovered_above_cap_paise, { decimals: true })} of the
-              baseline&rsquo;s total came from a single unattended debit above
-              the RBI e-mandate standard cap of ₹15,000. No merchant may bank
-              that as recovered revenue. It is a compliance failure wearing a
-              recovery number&rsquo;s clothes. Strip it out and the ranking
-              inverts on both axes.
+              Above ₹15,000 the RBI e-mandate framework requires additional
+              factor authentication, so an unattended presentation is declined.
+              Three independent layers refuse it here: the stopping rule
+              declines to schedule it, the money-side breaker refuses it at the
+              action boundary, and the simulated world declines it on
+              presentation. Both arms therefore recover{" "}
+              {rupees(sq.recovered_above_cap_paise, { decimals: true })} above
+              the cap &mdash; which is why the raw and compliance-adjusted
+              numbers on this page are identical, and why there is no
+              adjustment left to argue about.
+            </p>
+            <p className="mt-3 text-[13.5px] leading-relaxed text-ink-mute">
+              An earlier build credited the baseline with{" "}
+              <span className="tnum">₹73,653.24</span> of above-cap recoveries
+              and subtracted them in the report. That made the compliance
+              headline a correction to a simulator bug rather than a
+              measurement of behaviour. It is logged as defect 19.
             </p>
           </div>
 
           <div className="space-y-3 self-center">
             <Compare
-              label="Within the envelope"
+              label="Recovered"
               baseline={bl.recovered_within_envelope_paise}
               sequencer={sq.recovered_within_envelope_paise}
             />
             <Compare
-              label="Above the cap"
-              baseline={bl.recovered_above_cap_paise}
-              sequencer={sq.recovered_above_cap_paise}
+              label="Refused by the breaker"
+              baseline={bl.breaker_refusals}
+              sequencer={sq.breaker_refusals}
               breach
+              unit="count"
+            />
+            <Compare
+              label="Recoverable subs halted"
+              baseline={bl.pushed_to_halt.length}
+              sequencer={sq.pushed_to_halt.length}
+              breach
+              unit="count"
             />
           </div>
         </div>
@@ -119,7 +139,14 @@ export default function BatchPage() {
       </div>
 
       <div className="rise mb-8" style={{ animationDelay: "300ms" }}>
-        <ExceptionList records={records} />
+        <EscalationQueue records={records} labels={batch.escalation_labels} />
+      </div>
+
+      <div className="rise mb-8" style={{ animationDelay: "330ms" }}>
+        <ExceptionList
+          records={records}
+          escalationLabels={batch.escalation_labels}
+        />
       </div>
 
       {/* ---- Provenance ---- */}
@@ -207,11 +234,16 @@ function Compare({
   baseline,
   sequencer,
   breach = false,
+  // Counts (refusals, halted subscriptions) are not money and must not be
+  // formatted as rupees -- "3" refusals rendered as a currency reads as value
+  // recovered, which is the opposite of what it is.
+  unit = "money",
 }: {
   label: string;
   baseline: number;
   sequencer: number;
   breach?: boolean;
+  unit?: "money" | "count";
 }) {
   const max = Math.max(baseline, sequencer, 1);
   return (
@@ -229,7 +261,7 @@ function Compare({
                 breach && (v as number) > 0 ? "text-clay-ink" : "text-ink"
               }`}
             >
-              {rupees(v as number)}
+              {unit === "money" ? rupees(v as number) : String(v)}
             </span>
           </div>
           <div className="h-1.5 overflow-hidden rounded-full bg-ink/8">

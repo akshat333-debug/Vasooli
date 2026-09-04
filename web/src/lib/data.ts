@@ -19,11 +19,24 @@ export type FailureClass =
   | "LIMIT_EXCEEDED"
   | "UNKNOWN";
 
+/** The compliant next step for a record the engine declined. Mirrors
+ *  decide.Escalation. A stop is not an escalation: refusing to debit is only
+ *  half an answer, and the other half is where the rupee goes next. */
+export type Escalation =
+  | "NONE"
+  | "WINBACK_CAMPAIGN"
+  | "RE_MANDATE_LINK"
+  | "MANDATE_UPGRADE"
+  | "AFA_PAYMENT_LINK"
+  | "HUMAN_REVIEW";
+
 export interface ArmOutcome {
   recovered: boolean;
   attempts_spent: number;
   attempts_preserved: number;
   terminal_reason: string;
+  rule_fired?: number;
+  escalation?: Escalation;
 }
 
 export interface BatchRecord {
@@ -44,7 +57,8 @@ export interface BatchRecord {
   error_description: string;
   last_attempt_at: string;
   pre_debit_notified_at: string | null;
-  salary_day: number;
+  /** null when unknown -- a live webhook carries no payday. */
+  salary_day: number | null;
   exceeds_mandate_cap: boolean;
   needs_human_approval: boolean;
   failure_class: FailureClass;
@@ -53,6 +67,8 @@ export interface BatchRecord {
   action: Action;
   /** Which stopping rule decided this, 1-8, as reported by decide.py. */
   rule_fired: number;
+  escalation: Escalation;
+  escalation_label: string;
   verdict: string;
   scheduled_at: string | null;
   expected_success: number | null;
@@ -70,6 +86,14 @@ export interface Arm {
   soft_warnings: string[];
   attempts_spent: number;
   wasted_attempts: number;
+  /** Debits the money-side breaker refused at the action boundary. */
+  breaker_refusals: number;
+  /** Recoverable subscriptions this arm drove to `halted`. Customers lost. */
+  pushed_to_halt: {
+    subscription_id: string;
+    amount_paise: number;
+    failure_class: FailureClass;
+  }[];
   value_at_risk_paise: number;
   value_recovered_paise: number;
   recovered_within_envelope_paise: number;
@@ -108,6 +132,7 @@ export interface Scenario {
   disabled_rules: number[];
   attempts_spent: number;
   wasted_attempts: number;
+  breaker_refusals: number;
   recovered_within_envelope_paise: number;
   recovered_above_cap_paise: number;
   adjusted_paise_per_attempt: number;
@@ -127,6 +152,7 @@ export interface Batch {
     disclaimer: string;
   };
   arms: { baseline: Arm; sequencer: Arm };
+  escalation_labels: Record<string, string>;
   records: BatchRecord[];
   scenarios: Scenario[];
   ledger: {

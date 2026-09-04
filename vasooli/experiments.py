@@ -47,11 +47,26 @@ class ArmSummary:
     recovered_above_cap_paise: int
     attempts_spent: int
     wasted_attempts: int
+    breaker_refusals: int = 0
 
     @property
     def paise_per_attempt(self) -> float:
         return (self.recovered_within_paise / self.attempts_spent
                 if self.attempts_spent else 0.0)
+
+    @property
+    def gross_paise(self) -> int:
+        """Everything recovered, envelope or not.
+
+        The headline divides WITHIN-envelope recovery by attempts, which a
+        reviewer can fairly call scoring the arm that declines 42% of the batch
+        value on the remaining 58%. So the gross number is published beside it.
+        Since the AFA fix it is identical for both arms — the world declines
+        above-cap debits either way — which is the point: the two bases having
+        collapsed onto each other is a stronger answer than an argument about
+        which basis is fair.
+        """
+        return self.recovered_within_paise + self.recovered_above_cap_paise
 
 
 @dataclass
@@ -71,10 +86,22 @@ class SeedResult:
     def sequencer_won(self) -> bool:
         return self.sequencer.paise_per_attempt > self.baseline.paise_per_attempt
 
+    @property
+    def gross_per_attempt_delta_pct(self) -> float:
+        def pa(a: ArmSummary) -> float:
+            return a.gross_paise / a.attempts_spent if a.attempts_spent else 0.0
+        b = pa(self.baseline)
+        return (pa(self.sequencer) - b) / b * 100.0 if b else 0.0
+
+    @property
+    def gross_won(self) -> bool:
+        return self.gross_per_attempt_delta_pct > 0
+
 
 def _summarise(res, records) -> ArmSummary:
     within, over = compliance_split(res, records)
-    return ArmSummary(within, over, res.attempts_spent, res.wasted_attempts)
+    return ArmSummary(within, over, res.attempts_spent, res.wasted_attempts,
+                      res.breaker_refusals)
 
 
 def run_one(
@@ -117,6 +144,10 @@ class SweepResult:
     def losses(self) -> list[SeedResult]:
         return [r for r in self.results if not r.sequencer_won]
 
+    @property
+    def gross_deltas(self) -> list[float]:
+        return [r.gross_per_attempt_delta_pct for r in self.results]
+
     def summary(self) -> dict[str, Any]:
         d = sorted(self.deltas)
         n = len(d)
@@ -132,6 +163,12 @@ class SweepResult:
             "worst_delta_pct": d[0] if d else 0.0,
             "best_delta_pct": d[-1] if d else 0.0,
             "losing_seeds": [r.seed for r in self.losses],
+            # Published beside the headline so nobody has to take the
+            # compliance-adjusted basis on trust.
+            "gross_wins": sum(1 for r in self.results if r.gross_won),
+            "gross_median_delta_pct": (statistics.median(self.gross_deltas)
+                                       if self.results else 0.0),
+            "gross_losing_seeds": [r.seed for r in self.results if not r.gross_won],
         }
 
 
@@ -232,12 +269,20 @@ RULE_NAMES = {
 
 
 def ablate(seeds: list[int], n: int = 100) -> list[dict[str, Any]]:
-    """Turn each stopping rule off in turn and measure what it was worth."""
+    """Turn each stopping rule off in turn and measure what it was worth.
+
+    `above_cap_paise` is now ₹0 on every row including rule 6 off, because the
+    world declines an above-cap unattended debit whichever arm presents it. The
+    column that carries rule 6's cost is `breaker_refusals`: with the rule off,
+    the decision layer no longer catches those records and the money-side
+    breaker does, at the boundary. Defence in depth, measured.
+    """
     base = [run_one(s, n) for s in seeds]
     base_attempts = statistics.fmean(r.sequencer.attempts_spent for r in base)
     base_wasted = statistics.fmean(r.sequencer.wasted_attempts for r in base)
     base_within = statistics.fmean(r.sequencer.recovered_within_paise for r in base)
     base_over = statistics.fmean(r.sequencer.recovered_above_cap_paise for r in base)
+    base_ref = statistics.fmean(r.sequencer.breaker_refusals for r in base)
 
     rows = [{
         "rule": 0, "name": "all rules on",
@@ -245,6 +290,7 @@ def ablate(seeds: list[int], n: int = 100) -> list[dict[str, Any]]:
         "extra_attempts": 0.0, "extra_wasted": 0.0,
         "recovered_within_paise": round(base_within),
         "above_cap_paise": round(base_over),
+        "breaker_refusals": round(base_ref, 1),
     }]
 
     for rule, name in RULE_NAMES.items():
@@ -253,6 +299,7 @@ def ablate(seeds: list[int], n: int = 100) -> list[dict[str, Any]]:
         w = statistics.fmean(r.sequencer.wasted_attempts for r in off)
         within = statistics.fmean(r.sequencer.recovered_within_paise for r in off)
         over = statistics.fmean(r.sequencer.recovered_above_cap_paise for r in off)
+        ref = statistics.fmean(r.sequencer.breaker_refusals for r in off)
         rows.append({
             "rule": rule, "name": name,
             "attempts": round(a, 1), "wasted": round(w, 1),
@@ -260,6 +307,7 @@ def ablate(seeds: list[int], n: int = 100) -> list[dict[str, Any]]:
             "extra_wasted": round(w - base_wasted, 1),
             "recovered_within_paise": round(within),
             "above_cap_paise": round(over),
+            "breaker_refusals": round(ref, 1),
         })
     return rows
 
@@ -372,4 +420,29 @@ def decompose(seeds: list[int], n: int = 100) -> dict[str, Any]:
         "refusing_share": round((b_pa - a_pa) / total, 3) if total else 0.0,
         "timing_share": round((c_pa - b_pa) / total, 3) if total else 0.0,
     }
+    return out
+
+
+# --------------------------------------------------------------------------
+# 6. Does the result depend on the late-revocation hazard?
+# --------------------------------------------------------------------------
+
+def revocation_sensitivity(seeds: list[int], n: int = 100) -> dict[str, Any]:
+    """Re-run the attribution with the late-revocation hazard removed entirely.
+
+    The sequencer's pre-flight status call preserves attempts on mandates that
+    died between the decision and the debit. A reviewer can reasonably ask
+    whether the headline is really just that hazard. Setting the rate to zero
+    answers it with a number instead of an assurance: whatever the gap becomes,
+    it is published.
+    """
+    from . import execute
+
+    original = execute.LATE_REVOCATION_RATE
+    try:
+        execute.LATE_REVOCATION_RATE = 0.0
+        out = decompose(seeds, n)
+    finally:
+        execute.LATE_REVOCATION_RATE = original
+    out["late_revocation_rate"] = 0.0
     return out

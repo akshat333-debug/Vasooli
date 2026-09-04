@@ -5,18 +5,25 @@ grouped separately from the feature tests because their value is specifically
 that they fail if the fix is reverted.
 """
 
+import ast
+import inspect
+import textwrap
 from datetime import timedelta
 
 import pytest
+from hypothesis import given, settings
+from test_properties import records  # shared Hypothesis strategy (a strategy object)
 
 from vasooli import diagnose as dg
-from vasooli.decide import Action, best_retry_time, decide
-from vasooli.execute import _sequencer_schedule, run_batch
+from vasooli.decide import Action, Escalation, best_retry_time, decide
+from vasooli.execute import _attempt, _sequencer_schedule, mandate_status_at, run_batch
 from vasooli.ledger import Ledger
-from vasooli.policy import RecoveryPolicy
-from vasooli.report import render
+from vasooli.models import MAX_RETRY_BUDGET, RBI_STANDARD_CAP_PAISE, MandateStatus
+from vasooli.policy import ActionRefused, RecoveryFuse, RecoveryPolicy, RecoveryTripped
+from vasooli.report import pushed_to_halt, render
 from vasooli.sim.seed import BATCH_NOW, generate_batch
 from vasooli.taxonomy import FailureClass
+from vasooli.webhook import to_record
 
 
 @pytest.fixture
@@ -293,3 +300,229 @@ def test_breaker_still_accepts_a_normal_debit():
     f.check(49900)
     f.record(amount_paise=49900, recovered=True)
     assert f.state.value_recovered_paise == 49900
+
+
+# --- D18: the fuse declared two limits and enforced neither ------------------
+
+def test_fuse_refuses_a_debit_above_the_unattended_cap():
+    f = RecoveryFuse()
+    with pytest.raises(ActionRefused):
+        f.check(RBI_STANDARD_CAP_PAISE + 1)
+    assert f.state.refusals == 1
+
+
+def test_an_above_cap_refusal_is_not_a_batch_trip():
+    # The distinction is the whole point. A per-debit limit that halted the run
+    # would truncate the comparison it exists to protect -- that was defect 2.
+    f = RecoveryFuse()
+    with pytest.raises(ActionRefused):
+        f.check(RBI_STANDARD_CAP_PAISE + 1)
+    f.check(100)  # the batch continues
+    assert f.state.refusals == 1
+
+
+def test_a_refusal_is_not_caught_as_a_trip():
+    f = RecoveryFuse()
+    with pytest.raises(RecoveryTripped):
+        f.check(0)
+    try:
+        f.check(RBI_STANDARD_CAP_PAISE + 1)
+    except RecoveryTripped:  # pragma: no cover - fails the assertion below
+        pytest.fail("an above-cap refusal must not be a RecoveryTripped")
+    except ActionRefused:
+        pass
+
+
+def test_fuse_refuses_an_attempt_beyond_the_subscription_budget():
+    f = RecoveryFuse()
+    with pytest.raises(ActionRefused):
+        f.check(100, attempts_on_subscription=MAX_RETRY_BUDGET)
+
+
+# --- D19: the world credited debits the network would decline ---------------
+
+def _rec(**over):
+    r = generate_batch(20, seed=7)[0]
+    return r.model_copy(update=over)
+
+
+def test_nothing_above_the_rbi_cap_is_ever_recovered():
+    rec = _rec(amount_paise=RBI_STANDARD_CAP_PAISE + 1,
+               mandate_max_amount_paise=RBI_STANDARD_CAP_PAISE * 10,
+               mandate_status=MandateStatus.ACTIVE)
+    for attempt in range(MAX_RETRY_BUDGET):
+        assert not _attempt(rec, FailureClass.INSUFFICIENT_FUNDS,
+                            rec.last_attempt_at + timedelta(days=1), attempt)
+
+
+@settings(max_examples=100, deadline=None)
+@given(rec=records)
+def test_no_record_above_the_cap_is_recoverable_by_any_arm(rec):
+    if rec.amount_paise <= RBI_STANDARD_CAP_PAISE:
+        return
+    assert not _attempt(rec, FailureClass.INSUFFICIENT_FUNDS,
+                        rec.last_attempt_at + timedelta(days=1), 0)
+
+
+# --- D21: the hazard was branched on the arm's name -------------------------
+
+def test_the_execution_path_never_branches_on_the_arms_name():
+    # _attempt models the world. If it can see which arm is calling, the
+    # comparison is no longer between two strategies in one world.
+    # Prose is allowed to name the arms; code is not. Strip the docstring and
+    # the comments, then look at what is left.
+    src = textwrap.dedent(inspect.getsource(_attempt))
+    body = ast.parse(src).body[0].body
+    if isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant):
+        body = body[1:]
+    code = "\n".join(ast.unparse(n) for n in body)
+    assert "baseline" not in code
+    assert "sequencer" not in code
+    assert "arm" not in code
+
+
+def test_late_revocation_is_a_property_of_the_record_not_the_arm():
+    revoked = [r for r in generate_batch(200, seed=3)
+               if mandate_status_at(r) is MandateStatus.REVOKED
+               and r.mandate_status is MandateStatus.ACTIVE]
+    assert revoked, "expected the hazard to hit some record in 200"
+    rec = revoked[0]
+    # No arm argument exists to pass. Both arms get this answer.
+    assert not _attempt(rec, FailureClass.INSUFFICIENT_FUNDS,
+                        rec.last_attempt_at + timedelta(days=1), 0)
+
+
+def test_the_baseline_spends_an_attempt_where_the_sequencer_asks_first(tmp_path):
+    records_ = generate_batch(100, seed=3)
+    L = Ledger(tmp_path / "l.db")
+    bl = run_batch(records_, arm="baseline", now=BATCH_NOW, ledger=L)
+    sq = run_batch(records_, arm="sequencer", now=BATCH_NOW, ledger=L)
+    L.close()
+    revoked = {r.subscription_id for r in records_
+               if r.mandate_status is MandateStatus.ACTIVE
+               and mandate_status_at(r) is MandateStatus.REVOKED}
+    assert revoked
+    b = {o.subscription_id: o for o in bl.outcomes}
+    s = {o.subscription_id: o for o in sq.outcomes}
+    spent_b = sum(b[i].attempts_spent for i in revoked if i in b)
+    spent_s = sum(s[i].attempts_spent for i in revoked if i in s)
+    assert spent_b > spent_s
+
+
+# --- D22: the exception list fragmented one group per rupee amount ----------
+
+@settings(max_examples=200, deadline=None)
+@given(rec=records)
+def test_every_refusal_carries_an_escalation(rec):
+    d = decide(rec, FailureClass.INSUFFICIENT_FUNDS, BATCH_NOW)
+    if d.action is Action.RETRY_SCHEDULED:
+        assert d.escalation is Escalation.NONE
+    else:
+        assert d.escalation is not Escalation.NONE, d.verdict
+
+
+def test_two_above_cap_records_land_in_one_group(tmp_path):
+    above = [r for r in generate_batch(200, seed=11)
+             if r.needs_human_approval and r.mandate_status is MandateStatus.ACTIVE][:2]
+    assert len(above) == 2
+    assert above[0].amount_paise != above[1].amount_paise, "need distinct amounts"
+    L = Ledger(tmp_path / "l.db")
+    res = run_batch(above, arm="sequencer", now=BATCH_NOW, ledger=L)
+    L.close()
+    keys = {(o.rule_fired, o.escalation) for o in res.outcomes}
+    assert len(keys) == 1
+    assert next(iter(keys))[1] is Escalation.AFA_PAYMENT_LINK
+
+
+# --- D20: attempts_used came from paid_count --------------------------------
+
+def test_a_mature_subscription_is_not_read_as_exhausted():
+    from test_webhook import event
+
+    e = event()
+    e["payload"]["subscription"]["entity"].update(paid_count=10, remaining_count=2)
+    rec = to_record(e, BATCH_NOW)
+    assert rec.attempts_used == 0
+    assert rec.attempts_remaining == MAX_RETRY_BUDGET
+
+
+def test_a_webhook_record_has_no_invented_payday():
+    from test_webhook import event
+
+    assert to_record(event(), BATCH_NOW).salary_day is None
+
+
+# --- the halts metric -------------------------------------------------------
+
+def test_the_sequencer_halts_fewer_recoverable_subscriptions(tmp_path):
+    records_ = generate_batch(100, seed=42)
+    L = Ledger(tmp_path / "l.db")
+    bl = run_batch(records_, arm="baseline", now=BATCH_NOW, ledger=L)
+    sq = run_batch(records_, arm="sequencer", now=BATCH_NOW, ledger=L)
+    L.close()
+    assert len(pushed_to_halt(sq, records_)) <= len(pushed_to_halt(bl, records_))
+
+
+def test_prior_failures_counts_our_own_ledger_not_the_subscription_entity(tmp_path):
+    from vasooli.webhook import prior_failures
+
+    L = Ledger(tmp_path / "w.db")
+    assert prior_failures(L, "sub_live1") == 0
+    for i in range(2):
+        L.append(run_id="r", arm="webhook", event="webhook_received",
+                 verdict="accepted", subscription_id=f"evt_{i}",
+                 subscription="sub_live1", amount_paise=100)
+    L.append(run_id="r", arm="webhook", event="webhook_received",
+             verdict="accepted", subscription_id="evt_x",
+             subscription="sub_other", amount_paise=100)
+    # A row that is not a webhook, and one whose payload names no subscription.
+    L.append(run_id="r", arm="webhook", event="webhook_ignored",
+             verdict="ignored", subscription_id="evt_y")
+    assert prior_failures(L, "sub_live1") == 2
+    L.close()
+
+
+def test_repeated_deliveries_walk_the_budget_down(tmp_path):
+    # Three real failures should exhaust the budget; the fourth event arrives
+    # with attempts_used already capped rather than raising a ValidationError.
+    from test_webhook import event
+
+    from vasooli.webhook import prior_failures, to_record
+
+    L = Ledger(tmp_path / "w.db")
+    for i in range(5):
+        rec = to_record(event(), BATCH_NOW,
+                        attempts_used=prior_failures(L, "sub_live1"))
+        assert rec.attempts_used <= MAX_RETRY_BUDGET
+        L.append(run_id="r", arm="webhook", event="webhook_received",
+                 verdict="accepted", subscription_id=f"evt_{i}",
+                 subscription="sub_live1", amount_paise=rec.amount_paise)
+    L.close()
+
+
+def test_an_unknown_payday_schedules_at_the_legal_floor():
+    from vasooli.decide import earliest_legal_retry
+
+    rec = _rec(salary_day=None, mandate_status=MandateStatus.ACTIVE,
+               attempts_used=0, amount_paise=49900,
+               mandate_max_amount_paise=100000)
+    d = decide(rec, FailureClass.INSUFFICIENT_FUNDS, BATCH_NOW)
+    if d.action is Action.RETRY_SCHEDULED:
+        assert d.scheduled_at == earliest_legal_retry(rec, BATCH_NOW)
+        assert "replenishment day unknown" in d.verdict
+
+
+def test_the_hazard_sensitivity_restores_the_rate():
+    from vasooli import execute
+    from vasooli.experiments import revocation_sensitivity
+
+    before = execute.LATE_REVOCATION_RATE
+    out = revocation_sensitivity([1], n=20)
+    assert execute.LATE_REVOCATION_RATE == before
+    assert out["late_revocation_rate"] == 0.0
+    # A 20-record single seed is far too small to say anything about the size
+    # of the gain; the claim here is only that the switch is restored and the
+    # decomposition still runs and adds up.
+    a = out["attribution"]
+    assert a["from_refusing_paise"] + a["from_timing_paise"] == pytest.approx(
+        a["total_gain_per_attempt_paise"], abs=0.2)

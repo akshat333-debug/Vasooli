@@ -10,20 +10,33 @@ import { rupees, type BatchRecord } from "@/lib/data";
  * for hiding anything: the groups collapse, but nothing is ever omitted.
  */
 
-function groupKey(reason: string) {
-  // Verdict strings carry a machine-ish prefix then an em-dash explanation.
-  // The em-dash here is NOT UI copy: it matches the separator decide.py puts
-  // in its verdict strings. Changing it silently breaks the grouping.
+// Grouping key is the structured (rule, escalation) pair the engine exports,
+// not a slice of the verdict string. The old string split ran on an em dash,
+// and rules 5 and 6 interpolate the rupee amount BEFORE that dash -- so every
+// above-cap record formed a group of one and the list read as noise.
+function groupKey(r: BatchRecord) {
+  return `${r.sequencer.rule_fired ?? r.rule_fired}|${r.sequencer.escalation ?? "NONE"}`;
+}
+
+// The headline of a group is one member's verdict, trimmed. It is a label for
+// a group the engine defined, not the definition of the group.
+function groupHeadline(reason: string) {
   return reason.split(" \u2014 ")[0].split(" - ")[0];
 }
 
-export default function ExceptionList({ records }: { records: BatchRecord[] }) {
+export default function ExceptionList({
+  records,
+  escalationLabels,
+}: {
+  records: BatchRecord[];
+  escalationLabels: Record<string, string>;
+}) {
   const [open, setOpen] = useState<string | null>(null);
 
   const unrecovered = records.filter((r) => !r.sequencer.recovered);
   const groups = new Map<string, BatchRecord[]>();
   for (const r of unrecovered) {
-    const k = groupKey(r.sequencer.terminal_reason);
+    const k = groupKey(r);
     groups.set(k, [...(groups.get(k) ?? []), r]);
   }
   const sorted = [...groups.entries()].sort((a, b) => b[1].length - a[1].length);
@@ -45,13 +58,15 @@ export default function ExceptionList({ records }: { records: BatchRecord[] }) {
       </div>
 
       <ul>
-        {sorted.map(([reason, items]) => {
+        {sorted.map(([key, items]) => {
           const value = items.reduce((a, r) => a + r.amount_paise, 0);
-          const isOpen = open === reason;
+          const isOpen = open === key;
+          const headline = groupHeadline(items[0].sequencer.terminal_reason);
+          const escalation = items[0].sequencer.escalation ?? "NONE";
           return (
-            <li key={reason} className="border-b border-rule/70 last:border-0">
+            <li key={key} className="border-b border-rule/70 last:border-0">
               <button
-                onClick={() => setOpen(isOpen ? null : reason)}
+                onClick={() => setOpen(isOpen ? null : key)}
                 aria-expanded={isOpen}
                 className="flex w-full items-center gap-4 px-6 py-3.5 text-left transition-colors hover:bg-paper-sunk/45 sm:px-8"
               >
@@ -61,7 +76,12 @@ export default function ExceptionList({ records }: { records: BatchRecord[] }) {
                 <span className="tnum w-28 shrink-0 text-[13px] text-ink-mute">
                   {rupees(value)}
                 </span>
-                <span className="verdict min-w-0 flex-1 truncate">{reason}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="verdict block truncate">{headline}</span>
+                  <span className="mt-0.5 block truncate text-[11.5px] text-ink-mute">
+                    {escalationLabels[escalation] ?? "no route assigned"}
+                  </span>
+                </span>
                 <svg
                   width="14"
                   height="14"
