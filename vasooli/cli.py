@@ -10,7 +10,7 @@ import argparse
 import json
 import os
 import sys
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import timedelta
 
 from dotenv import load_dotenv
@@ -29,12 +29,13 @@ from .experiments import (
 )
 from .export import write_payload
 from .ledger import Ledger
+from .models import MAX_RETRY_BUDGET, RBI_STANDARD_CAP_PAISE, MandateStatus
 from .nudge import draft_batch, wants_nudge_count
 from .policy import RecoveryPolicy
 from .razorpay_adapter import run_live_probe
-from .report import render
+from .report import ESCALATION_LABEL, render
 from .sim.seed import BATCH_NOW, generate_batch
-from .taxonomy import classify_by_code
+from .taxonomy import FailureClass, classify_by_code
 
 
 def _cmd_seed(args: argparse.Namespace) -> int:
@@ -64,11 +65,34 @@ def _cmd_diagnose(args: argparse.Namespace) -> int:
 
     if not args.no_llm:
         checked = stats["agree"] + stats["disagree"]
-        rate = (stats["agree"] / checked * 100) if checked else 0.0
-        print(f"\n  LLM calls                     : {stats['llm_calls']}")
-        print(f"  LLM/dict agreement (head)     : {stats['agree']}/{checked} ({rate:.1f}%)")
+        errs = stats.get("llm_errors", 0)
+        print(f"\n  LLM calls attempted           : {stats['llm_calls']}")
+        # An unreachable model must never be reported as a model that answered.
+        # report.py learned this as defect 14 -- a run with the gateway down
+        # printed 20 "disagreements" as though a working model had given 20
+        # different answers. This command was still doing it.
+        if errs:
+            print(f"  calls that never reached it   : {errs}  <-- model unreachable")
+        if checked:
+            rate = stats["agree"] / checked * 100
+            print(f"  LLM/dict agreement (head)     : {stats['agree']}/{checked} ({rate:.1f}%)")
+        else:
+            print("  LLM/dict agreement (head)     : not measured "
+                  "(no call succeeded)")
         print(f"  rescued from UNKNOWN by LLM   : {stats['llm_rescued']}")
         print(f"  left UNKNOWN -> human review  : {stats['unknown']}")
+        if stats.get("degraded"):
+            print("\n  DEGRADED: the model was unavailable and this run fell back to")
+            print("  the dictionary alone. Unmapped failures went to human review.")
+            print(f"    reason: {stats.get('degraded_reason', 'unspecified')}")
+        if stats.get("fuse_aborted"):
+            print("\n  DEGRADED: the AI-stage circuit breaker aborted mid-batch.")
+            print("  Remaining records were classified by the dictionary alone.")
+            print(f"    reason: {stats.get('fuse_reason', 'unspecified')}")
+        if errs and not checked:
+            print("\n  Every figure above the divider came from the dictionary. The")
+            print("  classification is unaffected -- that is the point of making the")
+            print("  dictionary authoritative and the model advisory.")
     return 0
 
 
@@ -146,14 +170,24 @@ def _cmd_live(args: argparse.Namespace) -> int:
 
 def _cmd_export(args: argparse.Namespace) -> int:
     """Emit a full batch run as JSON for the web interface."""
-    import os
-
     if os.path.exists(args.db):
         os.remove(args.db)
     p = write_payload(args.out, n=args.n, seed=args.seed,
                       use_llm=not args.no_llm, db_path=args.db)
     size = p.stat().st_size
     print(f"wrote {p} ({size / 1024:.0f} KB)")
+
+    # RunFuse logs its trip to stderr. Unexplained, a bare "hard trip:" line
+    # above a success message reads like the export failed, so say what it was
+    # and what happened next rather than leaving a reader to guess.
+    payload = json.loads(p.read_text())
+    llm = payload.get("llm") or {}
+    if llm.get("fuse_aborted") or llm.get("degraded"):
+        print("\n  The AI stage degraded during this export and the interface")
+        print("  will say so on its own method page. Classification fell back to")
+        print("  the dictionary; no money decision was affected, because no model")
+        print("  participates in one.")
+        print(f"    reason: {llm.get('fuse_reason') or llm.get('degraded_reason')}")
     return 0
 
 
@@ -378,7 +412,6 @@ def _cmd_webhook(args: argparse.Namespace) -> int:
     import json as _json
     import uuid
 
-    from .models import MAX_RETRY_BUDGET
     from .webhook import EventIgnored, SignatureInvalid, ingest
 
     secret = os.environ.get("RAZORPAY_WEBHOOK_SECRET", "whsec_demo")
@@ -559,6 +592,200 @@ def _cmd_promise(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_explain(args: argparse.Namespace) -> int:
+    """Answer "why did you not retry this one?" for a single subscription.
+
+    The project claims auditability. Verifying the hash chain proves the record
+    was not edited; it does not tell anyone what the record SAYS. This command
+    is the other half: for one subscription it prints what arrived, how it was
+    classified, every stopping rule in order with the reason each one passed or
+    fired, what the engine then did, what the naive baseline did instead, and
+    the ledger rows that back all of it.
+
+    It is the question a merchant asks about a specific customer, and the
+    question a regulator asks about a specific debit. Both deserve an answer
+    that comes out of the ledger rather than out of a person's memory.
+    """
+    from .decide import best_retry_time, earliest_legal_retry
+    from .taxonomy import is_terminal
+
+    batch = generate_batch(args.n, seed=args.seed)
+    by_id = {r.subscription_id: r for r in batch}
+    rec = by_id.get(args.subscription_id)
+    if rec is None:
+        print(f"No record {args.subscription_id!r} in batch seed={args.seed}, n={args.n}.")
+        print(f"Try one of: {', '.join(list(by_id)[:5])} ...")
+        return 1
+
+    diagnoses, _ = diagnose_batch(batch, use_llm=False)
+    diag = next(d for d in diagnoses if d.subscription_id == rec.subscription_id)
+    fc = diag.failure_class
+    decision = decide(rec, fc, BATCH_NOW)
+
+    money = lambda paise: f"Rs {paise / 100:,.2f}"
+
+    print(f"WHY: {rec.subscription_id}")
+    print("=" * 70)
+    print("\nWHAT ARRIVED")
+    print(f"  customer          : {rec.customer_id}")
+    print(f"  amount            : {money(rec.amount_paise)} via {rec.method.value} ({rec.bank})")
+    print(f"  bank said         : {rec.error_code} / {rec.error_reason}")
+    print(f'                      "{rec.error_description}"')
+    print(f"  mandate           : {rec.mandate_id}, {rec.mandate_status.value}, "
+          f"cap {money(rec.mandate_max_amount_paise)}, valid to "
+          f"{rec.mandate_valid_until:%Y-%m-%d}")
+    print(f"  attempts used     : {rec.attempts_used} of {MAX_RETRY_BUDGET}"
+          f"  ({rec.attempts_remaining} left)")
+    print(f"  pre-debit notice  : "
+          f"{rec.pre_debit_notified_at:%Y-%m-%d %H:%M} on file"
+          if rec.pre_debit_notified_at else "  pre-debit notice  : none on file")
+
+    print("\nHOW IT WAS CLASSIFIED")
+    print(f"  class             : {fc.value}")
+    print(f"  source            : {diag.source}")
+    print(f"  because           : {diag.rationale}")
+
+    # Every rule, evaluated in order, whether it fired or not. A trace that
+    # showed only the rule that fired would hide the ones that nearly did.
+    at, p = best_retry_time(rec, fc, BATCH_NOW)
+    floor = earliest_legal_retry(rec, BATCH_NOW)
+    checks = [
+        (1, "retry budget exhausted", rec.attempts_remaining <= 0,
+         f"{rec.attempts_remaining} attempt(s) remain"),
+        (2, "failure class is terminal", is_terminal(fc),
+         f"{fc.value} is {'terminal' if is_terminal(fc) else 'recoverable'}"),
+        (3, "mandate not active", rec.mandate_status is not MandateStatus.ACTIVE,
+         f"mandate is {rec.mandate_status.value}"),
+        (4, "failure unclassified", fc is FailureClass.UNKNOWN,
+         f"classified as {fc.value}"),
+        (5, "above the mandate's own cap", rec.exceeds_mandate_cap,
+         (f"{money(rec.amount_paise)} against a cap of "
+          f"{money(rec.mandate_max_amount_paise)}")),
+        (6, "above the RBI AFA-free cap", rec.needs_human_approval,
+         f"{money(rec.amount_paise)} against {money(RBI_STANDARD_CAP_PAISE)}"),
+        (7, "no lawful window before expiry", at is None,
+         (f"notice floor {floor:%Y-%m-%d}, mandate expires "
+          f"{rec.mandate_valid_until:%Y-%m-%d}")),
+    ]
+
+    print("\nEVERY STOPPING RULE, IN ORDER")
+    fired = None
+    for n, name, hit, detail in checks:
+        if fired is not None:
+            print(f"  {n}  {name:32} not reached (rule {fired} already fired)")
+            continue
+        mark = "FIRED " if hit else "pass  "
+        print(f"  {n}  {name:32} {mark} {detail}")
+        if hit:
+            fired = n
+    if fired is None:
+        print(f"  8  schedule the retry             FIRED  best moment "
+              f"{at:%Y-%m-%d %H:%M}, assumed p={p:.2f}")
+
+    print("\nWHAT THE ENGINE DID")
+    print(f"  rule fired        : {decision.rule_fired}")
+    print(f"  action            : {decision.action.value}")
+    print(f"  escalation        : {decision.escalation.value}")
+    if decision.escalation.value in ESCALATION_LABEL:
+        print(f"  next step         : {ESCALATION_LABEL[decision.escalation.value]}")
+    print(f"  verdict           : {decision.verdict}")
+
+    ledger = Ledger(args.db)
+    hits = [r for r in ledger.rows() if r["subscription_id"] == rec.subscription_id]
+    ledger.close()
+    # The ledger is append-only, so a database written by three `vasooli run`
+    # invocations holds three traces for this subscription. Show the most
+    # recent run of each arm; the older ones are still in the chain and still
+    # verify, they are just not what "what happened" means here.
+    latest = {}
+    for r in hits:
+        latest[r["arm"]] = r["run_id"]
+    rows = [r for r in hits if latest.get(r["arm"]) == r["run_id"]]
+    if rows:
+        older = len(hits) - len(rows)
+        print(f"\nWHAT THE LEDGER SAYS  ({len(rows)} rows from the most recent run "
+              f"of each arm in {args.db}"
+              + (f"; {older} older row(s) from earlier runs not shown)" if older else ")"))
+        for r in rows:
+            print(f"  [{r['idx']:>4}] {r['arm']:<9} {r['event']:<18} {r['verdict'][:88]}")
+    else:
+        print("\nWHAT THE LEDGER SAYS")
+        print(f"  No rows for this subscription in {args.db}.")
+        print(f"  Run `vasooli run --db {args.db}` first and the trace above will")
+        print("  be backed by both arms' recorded attempts.")
+
+    print("\n" + "=" * 70)
+    print("Every line above is derived from the record and the rules, in the same")
+    print("order the engine applies them. Nothing here is a reconstruction after")
+    print("the fact -- rerun it and it is identical, which is the point of having")
+    print("no model in the decision path.")
+    return 0
+
+
+def _cmd_worklist(args: argparse.Namespace) -> int:
+    """The escalation queue as something a person can actually work.
+
+    The report prints escalation counts, which answers "how bad is it". This
+    answers "what do I do on Monday": one row per unrecovered subscription,
+    with the route, the concrete next step, and the amount, sorted so the
+    largest recoverable value is at the top.
+
+    CSV because that is what gets opened, filtered and handed to whoever does
+    the work. Every column comes out of the engine; nothing is projected.
+    """
+    import csv
+
+    batch = generate_batch(args.n, seed=args.seed)
+    ledger = Ledger(args.db)
+    diagnoses, _ = diagnose_batch(batch, use_llm=not args.no_llm)
+    result = run_batch(batch, arm="sequencer", now=BATCH_NOW, ledger=ledger,
+                       diagnoses=diagnoses, draw_salt=str(args.seed))
+    ledger.close()
+
+    by_id = {r.subscription_id: r for r in batch}
+    rows = []
+    for o in result.outcomes:
+        if o.recovered:
+            continue
+        rec = by_id[o.subscription_id]
+        rows.append({
+            "subscription_id": o.subscription_id,
+            "customer_id": rec.customer_id,
+            "amount_inr": f"{o.amount_paise / 100:.2f}",
+            "failure_class": o.failure_class.value,
+            "rule_fired": o.rule_fired,
+            "escalation": str(o.escalation),
+            "next_step": ESCALATION_LABEL.get(str(o.escalation), ""),
+            "attempts_spent": o.attempts_spent,
+            "attempts_preserved": o.attempts_preserved,
+            "mandate_status": rec.mandate_status.value,
+            "mandate_valid_until": f"{rec.mandate_valid_until:%Y-%m-%d}",
+            "why": o.terminal_reason,
+        })
+    rows.sort(key=lambda r: -float(r["amount_inr"]))
+
+    with open(args.out, "w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=list(rows[0]) if rows else ["subscription_id"])
+        w.writeheader()
+        w.writerows(rows)
+
+    total = sum(float(r["amount_inr"]) for r in rows)
+    print(f"Escalation worklist: {len(rows)} subscriptions, "
+          f"Rs {total:,.2f} still owed.\n")
+    grouped: dict[str, list] = defaultdict(list)
+    for r in rows:
+        grouped[r["escalation"]].append(r)
+    for esc, items in sorted(grouped.items(),
+                             key=lambda kv: -sum(float(r["amount_inr"]) for r in kv[1])):
+        v = sum(float(r["amount_inr"]) for r in items)
+        print(f"  {len(items):>4}  Rs {v:>12,.2f}  {esc}")
+        print(f"        {ESCALATION_LABEL.get(esc, 'no route assigned')}")
+    print(f"\nwritten to {args.out}")
+    print("One row per subscription, largest first. Every column comes from the")
+    print("engine -- there is no projected or estimated figure in this file.")
+    return 0
+
+
 def _cmd_verify_ledger(args: argparse.Namespace) -> int:
     L = Ledger(args.db)
     r = L.verify()
@@ -601,6 +828,21 @@ def main(argv: list[str] | None = None) -> int:
     t.add_argument("--cap", type=int, default=25)
     t.add_argument("--db", default="vasooli-demo.db")
     t.set_defaults(fn=_cmd_demo_trip)
+
+    ex = sub.add_parser("explain", help="why the engine decided one subscription")
+    ex.add_argument("subscription_id")
+    ex.add_argument("-n", type=int, default=100)
+    ex.add_argument("--seed", type=int, default=42)
+    ex.add_argument("--db", default="vasooli.db")
+    ex.set_defaults(fn=_cmd_explain)
+
+    wl = sub.add_parser("worklist", help="the escalation queue as an actionable CSV")
+    wl.add_argument("-n", type=int, default=100)
+    wl.add_argument("--seed", type=int, default=42)
+    wl.add_argument("--db", default="vasooli-worklist.db")
+    wl.add_argument("--no-llm", action="store_true")
+    wl.add_argument("--out", default="worklist.csv")
+    wl.set_defaults(fn=_cmd_worklist)
 
     wh = sub.add_parser("webhook", help="drive the live-event door end to end")
     wh.add_argument("--subscription", default="sub_live_demo")

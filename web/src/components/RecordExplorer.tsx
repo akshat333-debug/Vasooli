@@ -29,7 +29,7 @@ const RULES = [
   { n: 3, test: "Mandate not active", action: "STOP_TERMINAL" },
   { n: 4, test: "Failure unclassified", action: "HUMAN_REVIEW" },
   { n: 5, test: "Above the mandate's own cap", action: "HUMAN_REVIEW" },
-  { n: 6, test: "Above the RBI standard cap", action: "HUMAN_REVIEW" },
+  { n: 6, test: "Above the RBI AFA-free cap", action: "HUMAN_REVIEW" },
   { n: 7, test: "Mandate expires before notice elapses", action: "STOP_TERMINAL" },
   { n: 8, test: "Eligible, schedule at the best moment", action: "RETRY_SCHEDULED" },
 ];
@@ -209,6 +209,19 @@ function Row({
               <p className="verdict rounded-lg border-l-2 p-3" style={{ borderColor: tone, background: "#faf8f3" }}>
                 {r.verdict}
               </p>
+
+              {r.escalation !== "NONE" && (
+                <>
+                  <p className="eyebrow mt-4 mb-2">Where it goes next</p>
+                  <p className="verdict rounded-lg bg-paper-raised p-3">
+                    <span className="font-mono text-[12px] tracking-tight">
+                      {r.escalation}
+                    </span>
+                    <br />
+                    <span className="text-ink-mute">{r.escalation_label}</span>
+                  </p>
+                </>
+              )}
             </div>
 
             <div>

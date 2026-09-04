@@ -44,6 +44,8 @@ jobs:
           uv run vasooli run --no-llm
           uv run vasooli verify-ledger
           uv run vasooli webhook
+          uv run vasooli explain sub_SYN0002
+          uv run vasooli worklist --no-llm --out /tmp/worklist.csv
           uv run vasooli promise -n 40
           uv run vasooli demo-trip
           uv run vasooli export

@@ -85,3 +85,48 @@ def test_promise_command_survives_a_batch_with_nothing_to_show(db, capsys):
     for n in (1, 2, 3):
         assert main(["promise", "--db", db, "-n", str(n)]) == 0
     assert capsys.readouterr().out
+
+
+def test_explain_traces_every_rule_not_just_the_one_that_fired(db, capsys):
+    # A trace showing only the rule that fired hides the ones that nearly did,
+    # which is the difference between an explanation and an assertion.
+    assert main(["explain", "sub_SYN0002", "--db", db]) == 0
+    out = capsys.readouterr().out
+    for n in range(1, 8):
+        assert f"  {n}  " in out
+    assert "FIRED" in out
+    assert "not reached (rule" in out
+    assert "WHAT ARRIVED" in out
+    assert "HOW IT WAS CLASSIFIED" in out
+    assert "next step" in out
+
+
+def test_explain_refuses_an_unknown_subscription(db, capsys):
+    assert main(["explain", "sub_NOPE", "--db", db]) == 1
+    assert "No record" in capsys.readouterr().out
+
+
+def test_explain_survives_a_ledger_that_has_never_been_written(db, capsys):
+    assert main(["explain", "sub_SYN0000", "--db", db]) == 0
+    assert "No rows for this subscription" in capsys.readouterr().out
+
+
+def test_worklist_writes_one_row_per_unrecovered_record(tmp_path, db, capsys):
+    out_csv = tmp_path / "w.csv"
+    assert main(["worklist", "--no-llm", "--db", db, "--out", str(out_csv)]) == 0
+
+    import csv
+
+    rows = list(csv.DictReader(out_csv.open()))
+    assert rows
+    # Every row carries a route and a concrete instruction. A worklist with an
+    # unrouted row is a row nobody can action.
+    for r in rows:
+        assert r["escalation"] not in ("", "NONE")
+        assert r["next_step"]
+        assert float(r["amount_inr"]) > 0
+    # Largest first: the point of the file is that the top of it is where the
+    # money is.
+    amounts = [float(r["amount_inr"]) for r in rows]
+    assert amounts == sorted(amounts, reverse=True)
+    assert "still owed" in capsys.readouterr().out
