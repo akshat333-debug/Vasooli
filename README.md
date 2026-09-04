@@ -41,7 +41,7 @@ Most dunning systems treat a retry as free and burn it on a fixed T+1 / T+3 / T+
 |---|---|
 | ~3 retries, then the subscription halts, permanently | Razorpay Subscriptions |
 | A pre-debit notification must precede any debit | RBI e-mandate framework, 2026 |
-| ₹15,000 standard cap on an unattended recurring debit | RBI e-mandate framework, 2026 |
+| ₹15,000 cap on an unattended recurring debit; above it, AFA is required and an unattended presentation is **declined** | RBI e-mandate framework, 2026 |
 | A debit above `mandate_max_amount` is rejected on presentation | mandate terms |
 | A revoked or expired mandate can never be debited | mandate lifecycle |
 
@@ -49,7 +49,7 @@ So a retry is an **irreversible, regulated, capped action drawn against a scarce
 
 That reframing is the whole project. Not *retry harder*, but **allocate three attempts well.**
 
-**Vasooli is a batch engine plus a viewer.** The engine ingests at-risk subscriptions, classifies each failure, applies eight ordered stopping rules, schedules the survivors at their best lawful moment, executes under a circuit breaker, and writes every decision to a hash-chained audit trail. The web interface renders what the engine decided and computes nothing of its own.
+**Vasooli is a batch engine plus a viewer.** The engine ingests at-risk subscriptions, classifies each failure, applies seven ordered stopping rules, schedules the survivors at their best lawful moment, executes under a circuit breaker, routes every refusal to a structured escalation, and writes the lot to a hash-chained audit trail. The web interface renders what the engine decided and computes nothing of its own.
 
 ---
 
@@ -58,9 +58,9 @@ That reframing is the whole project. Not *retry harder*, but **allocate three at
 | | |
 |---|---|
 | **Repo** | `github.com/akshat333-debug/Vasooli`, branch `main` |
-| **Engine** | Python 3.11+, 18 modules, ~4,270 lines |
+| **Engine** | Python 3.11+, 18 modules, ~4,710 lines |
 | **Interface** | Next.js 15 + TypeScript + Tailwind v4, ~2,220 lines, 4 pages |
-| **Tests** | **194**, hermetic: no network, no API keys, no gateway |
+| **Tests** | **213**, hermetic: no network, no API keys, no gateway |
 | **Coverage** | **91%** on the engine (CI floor 90%) |
 | **Lint** | `ruff` clean; `tsc --noEmit` clean |
 | **CI** | GitHub Actions, engine + web, given no credentials on purpose |
@@ -77,7 +77,7 @@ Read this before judging any design decision, because most of them follow from c
 
 **The retry budget is three, and it is terminal.** Razorpay retries a failed subscription charge a bounded number of times, then moves the subscription to `halted`. There is no fourth attempt and no undo. This makes an attempt a *scarce resource*, which is unusual — most systems optimise a rate, this one optimises an allocation.
 
-**The RBI e-mandate framework (2026) sets three hard limits.** A pre-debit notification must reach the customer before the debit. Unattended recurring debits are capped at ₹15,000 (₹1L for certain categories). Both apply equally to UPI AutoPay and card e-mandates. A system that ignores these is not "more aggressive", it is non-compliant.
+**The RBI e-mandate framework (2026) sets hard limits.** A pre-debit notification must reach the customer before the debit. Unattended recurring debits are capped at ₹15,000 (₹1L for certain categories); above that, additional factor authentication is required, which means an unattended presentation is not merely disallowed — it is **declined**. Both apply equally to UPI AutoPay and card e-mandates. A system that ignores these is not "more aggressive", it is spending its scarce attempts on debits that cannot settle.
 
 **A mandate is a separate object from a subscription, with its own lifecycle.** It can be revoked by the customer at any time, expire on its own date, be paused, and carry its own per-transaction ceiling that may be lower than the amount being charged. A subscription can look perfectly healthy while its mandate is dead.
 
@@ -89,52 +89,97 @@ Read this before judging any design decision, because most of them follow from c
 
 100 synthetic at-risk subscriptions, ₹277,822.71 at risk, seed 42. Both arms see identical records and identical random draws.
 
-### Headline, compliance-adjusted
+### Headline
 
 |  | baseline | sequencer | delta |
 |---|---:|---:|---:|
 | Recovered | ₹57,571.00 | **₹58,875.00** | +₹1,304.00 |
-| Attempts spent | 165 | **77** | −88 |
-| Wasted attempts | 134 | **52** | −82 |
-| **Recovered per attempt** | ₹348.92 | **₹764.61** | **+119.1%** |
+| Attempts spent | 160 | **77** | −83 |
+| Wasted attempts | 131 | **52** | −79 |
+| Refused by the money breaker | 3 | **0** | −3 |
+| Recoverable subscriptions halted | 27 | **22** | −5 |
+| **Recovered per attempt** | ₹359.82 | **₹764.61** | **+112.5%** |
 
-The headline metric is **recovery per attempt**, not gross recovery, because the retry budget is the scarce resource.
+The headline metric is **recovery per attempt**, not gross recovery, because the retry budget is the scarce resource: three attempts, then Razorpay halts the subscription and it is terminal.
 
-### The baseline wins on the raw numbers. It wins by breaking a rule.
+**There is one basis.** Raw and compliance-adjusted recovery are now identical for both arms — ₹57,571.00 and ₹58,875.00, with ₹0 recovered above the RBI cap on either side. There is no adjustment left to argue about.
 
-Unadjusted, the baseline beats the sequencer on *both* axes: ₹131,224 against ₹58,875 in total, and ₹795.30 against ₹764.61 per attempt.
+That is a correction, and it is worth stating plainly. An earlier build of this engine **credited the baseline with ₹73,653.24 of above-cap recoveries** and subtracted them in the report. Under the RBI e-mandate framework a recurring debit above ₹15,000 requires additional factor authentication, so an unattended presentation of one is *declined* — the money was never deliverable, and the "compliance-adjusted" headline was silently correcting a simulator error rather than measuring a behaviour. It is logged as defect 19. The finding survives the fix and is stronger for it: the baseline was not merely breaking a rule, it was **burning attempts on debits that could never settle.**
 
-₹73,653.24 of the baseline's total came from **two unattended debits above the RBI standard cap** — debits automation is not permitted to make alone. That is not revenue a merchant can bank. Remove those two actions and the ranking inverts decisively on both axes.
+Three independent layers refuse an above-cap debit now:
 
-Both bases are printed side by side in [`BATCH_REPORT.txt`](BATCH_REPORT.txt) so the adjusted headline can be checked against the unadjusted figures. Picking whichever was flattering would have been easy, and is the whole thing this project is against.
+1. **The stopping rule** (rule 6) declines to schedule it and routes it to `AFA_PAYMENT_LINK`.
+2. **The money-side breaker** refuses it at the action boundary, as `ActionRefused` — one debit refused, the batch continues.
+3. **The world** declines it on presentation, for both arms, because that is what the network does.
+
+The ablation makes this visible: switch rule 6 off and above-cap recovery is *still* ₹0, while the breaker's refusal count rises from 0.0 to 4.8 per batch. The cost of losing a rule shows up one layer down, which is what defence in depth is supposed to look like.
+
+### Recoverable subscriptions halted: 27 against 22
+
+"86 attempts preserved" is an abstraction. This is its rupee meaning.
+
+A record counts as **halted** when the mandate was live, the failure class was recoverable, the amount sat inside both caps — and every attempt was burned anyway. Razorpay marks that subscription `halted`, and a halted subscription is a customer lost, not a retry deferred. The baseline drives 27 of them there, worth ₹42,573.00 a month; the sequencer drives 22, worth ₹29,378.00. **Five recurring customers, ₹13,195.00 of monthly revenue, kept alive for the next cycle by not spending attempts on debits that were never going to land.**
+
+### Escalation queue: a route for every rupee still at risk
+
+Refusing to debit is only half an answer. The money is still owed, and a system that stops at "declined" has swapped one silent failure — burning attempts — for another: a queue nobody works. Every record the engine declines therefore carries an `Escalation` as **structured data on the decision**, not as English inside a verdict string.
+
+| Count | Value | Route | What a merchant does |
+|---:|---:|---|---|
+| 28 | ₹85,839.47 | `RE_MANDATE_LINK` | send a new mandate registration link |
+| 2 | ₹73,653.24 | `AFA_PAYMENT_LINK` | customer-present payment link with AFA |
+| 35 | ₹50,965.00 | `WINBACK_CAMPAIGN` | fresh invoice plus a winback nudge |
+| 6 | ₹4,494.00 | `MANDATE_UPGRADE` | request a cap upgrade, or split the invoice |
+| 4 | ₹3,996.00 | `HUMAN_REVIEW` | a person reads the bank's own text |
+
+**The baseline produces none of this.** It leaves 71 unrecovered records and 0 escalations: it spends the attempts, halts the subscription, and says nothing about what happens next.
+
+`RE_MANDATE_LINK` is not a slogan either — `razorpay_adapter` captures the real test-mode `short_url` from a live Subscriptions call and writes it to the ledger as `mandate_registration_url`, so the route has an artefact a customer could actually authenticate at.
 
 ### Honest exception list: 75 of 100 records unrecovered, ₹218,947.71 still at risk
 
-| Count | Value | Reason |
-|---:|---:|---|
-| 22 | ₹29,378.00 | all available attempts spent without recovery |
-| 13 | ₹21,587.00 | retry budget already exhausted on arrival |
-| 9 | ₹11,891.00 | mandate revoked *after* the decision, caught at execution |
-| 9 | ₹17,591.00 | `MANDATE_REVOKED` |
-| 5 | ₹3,495.00 | mandate revoked despite an `INSUFFICIENT_FUNDS` failure |
-| 5 | ₹4,195.00 | `LIMIT_EXCEEDED` |
-| 4 | ₹6,396.00 | `MANDATE_EXPIRED` |
-| 3 | ₹1,497.00 | unclassifiable by dict or model, sent to a person |
-| 2 | ₹48,965.47 | `MANDATE_PAUSED` |
-| 2 | ₹73,653.24 | above the RBI standard cap, sent to a person |
-| 1 | ₹299.00 | above the mandate's own cap, sent to a person |
+Grouped by the `(rule_fired, escalation)` pair the engine exported, not by parsing its own prose. Nothing is filtered, and there is no top-N.
+
+| Count | Value | Rule | Route |
+|---:|---:|---|---|
+| 22 | ₹29,378.00 | 8, attempts spent without recovery | `WINBACK_CAMPAIGN` |
+| 14 | ₹15,386.00 | 3, mandate revoked *after* the decision, caught at execution | `RE_MANDATE_LINK` |
+| 14 | ₹70,453.47 | 2, `MANDATE_REVOKED` | `RE_MANDATE_LINK` |
+| 13 | ₹21,587.00 | 1, retry budget already exhausted on arrival | `WINBACK_CAMPAIGN` |
+| 5 | ₹4,195.00 | 2, `LIMIT_EXCEEDED` | `MANDATE_UPGRADE` |
+| 4 | ₹3,996.00 | 4, unclassifiable by dict or model | `HUMAN_REVIEW` |
+| 2 | ₹73,653.24 | 6, above the RBI AFA-free cap | `AFA_PAYMENT_LINK` |
+| 1 | ₹299.00 | 5, above the mandate's own cap | `MANDATE_UPGRADE` |
 
 **86 retry attempts were preserved by refusing to act.** That is the number the project is actually optimising, and it is invisible in any report that only counts wins.
+
+Note the grouping. Previous versions of this table showed the two above-cap records as **two separate rows of one**, because the grouping key was a prefix of the verdict string split on an em dash — and rules 5 and 6 interpolate the rupee amount *before* that dash, so every such record formed its own group. Defect 22.
 
 ---
 
 ## 5. Does the claim survive scrutiny
 
-One seed proves nothing. `uv run vasooli experiments` runs five checks; full output in [`EXPERIMENTS.txt`](EXPERIMENTS.txt).
+One seed proves nothing. `uv run vasooli experiments --seeds 40` runs six checks; full output in [`EXPERIMENTS.txt`](EXPERIMENTS.txt).
 
 ### 5.1 It is not an artefact of seed 42
 
-Across **40 independent seeds**, the sequencer led on recovery-per-attempt in **40 of 40**. Median **+126.2%**, 5th percentile **+68.6%**, worst seed **+52.2%**. No losing seeds, and if there had been, the sweep publishes them by number.
+Across **40 independent seeds**, the sequencer led on recovery-per-attempt in **40 of 40**. Median **+114.3%**, 5th percentile **+63.2%**, 95th **+216.0%**, worst seed **+50.4%**. No losing seeds, and if there had been, the sweep publishes them by number.
+
+**On gross recovery, unadjusted, the answer is identical: 40 of 40, median +114.3%.** A reviewer can fairly object that dividing *within-envelope* recovery by attempts scores the arm that declines 42% of the batch value on the remaining 58%. So the gross figure is published beside it — and since the AFA fix the two bases coincide exactly, because neither arm recovers anything above the cap. The adjustment is doing no work at all, which is a better answer than a defence of it.
+
+### 5.1b The result does not rest on the late-revocation hazard
+
+The sequencer makes a pre-flight mandate status call and preserves attempts on mandates that died between the decision and the debit. Is the headline just that hazard? Re-run the whole attribution with `LATE_REVOCATION_RATE = 0`:
+
+| | with the hazard | hazard removed |
+|---|---:|---:|
+| Total gain per attempt | ₹349.92 | ₹320.39 |
+| From refusing | ₹286.41 (82%) | ₹255.28 (80%) |
+| From timing | ₹63.52 (18%) | ₹65.11 (20%) |
+
+Removing it entirely costs **₹29.53 of ₹349.92** — 8% of the gain. The mechanism is not the hazard.
+
+This check exists because the hazard used to be implemented dishonestly: the same pure hash function was called on both paths, gated by `if arm == "sequencer"` / `if arm == "baseline"`, so the revocation was a *rule that favoured one arm* rather than a fact both arms faced. It is now `mandate_status_at(record)`, which takes no arm argument at all, and a test parses `_attempt`'s AST and fails if the word `arm` reappears inside it. Defect 21.
 
 ### 5.2 Most of the advantage is refusal, not timing
 
@@ -142,36 +187,42 @@ Across **40 independent seeds**, the sequencer led on recovery-per-attempt in **
 
 Three arms over identical records and draws: **A** the baseline, **B** the sequencer's stopping rules with the baseline's naive schedule, **C** the full sequencer. `B − A` is what refusing is worth; `C − B` is what timing is worth.
 
-| Arm | Per attempt |
-|---|---:|
-| A, baseline | ₹283.24 |
-| B, refusals only, naive timing | ₹589.47 |
-| C, refusals + optimal timing | ₹652.99 |
+| Arm | Per attempt | Attempts |
+|---|---:|---:|
+| A, baseline | ₹303.07 | 159 |
+| B, refusals only, naive timing | ₹589.47 | 82 |
+| C, refusals + optimal timing | ₹652.99 | 76 |
 
-**83% of the gain comes from refusing doomed attempts. 17% comes from timing them well.**
+**82% of the gain comes from refusing doomed attempts. 18% comes from timing them well.**
 
 The grid search over the payday cycle is the most elaborate part of this engine and it is the smaller half by a wide margin. The dominant mechanism is the boring one: *do not spend an attempt that cannot succeed.*
 
-Confirmed independently: closing the assumed payday gap to **zero**, removing every reason for timing to matter, still leaves the sequencer ahead by +147% at a 100% win rate. If timing were doing the work, that should have collapsed it.
+Confirmed independently: closing the assumed payday gap to **zero**, removing every reason for timing to matter, still leaves the sequencer ahead by **+90.7% at a 100% win rate** (down from +114.3%). If timing were doing the work, that should have collapsed it.
 
 ### 5.3 Every stopping rule was priced
 
 Each rule switched off in turn, averaged across seeds:
 
-| Rule | Attempts | Wasted | Above cap |
-|---|---:|---:|---:|
-| all rules on | 76.3 | 44.2 | ₹0 |
-| 1, retry budget exhausted | 81.7 | 47.4 | ₹0 |
-| 2, terminal failure class | 81.2 | 49.1 | ₹0 |
-| 3, mandate not active | **84.8** | **52.6** | ₹0 |
-| 4, failure unclassified | 81.7 | 49.5 | ₹0 |
-| 5, above the mandate's own cap | 83.6 | 51.5 | ₹0 |
-| 6, above the RBI standard cap | 82.3 | 47.5 | **₹86,599** |
-| 7, mandate expires before notice | 76.3 | 44.2 | ₹0 |
+| Rule | Attempts | Wasted | Above cap | Breaker refusals |
+|---|---:|---:|---:|---:|
+| all rules on | 76.3 | 44.2 | ₹0 | 0.0 |
+| 1, retry budget exhausted | 76.3 | 44.2 | ₹0 | **5.9** |
+| 2, terminal failure class | 81.2 | 49.1 | ₹0 | 0.0 |
+| 3, mandate not active | 76.3 | 44.2 | ₹0 | 0.0 |
+| 4, failure unclassified | 81.7 | 49.5 | ₹0 | 0.0 |
+| 5, above the mandate's own cap | **83.6** | **51.5** | ₹0 | 0.0 |
+| 6, above the RBI standard cap | 76.3 | 44.2 | ₹0 | **4.8** |
+| 7, mandate expires before notice | 76.3 | 44.2 | ₹0 | 0.0 |
 
-Rule 3 is the most expensive to remove. Rule 6 is the only one whose removal produces debits outside the compliance envelope.
+**Above-cap recovery is ₹0 on every row, including rule 6 off.** That is not a broken ablation, it is defence in depth: with the decision-layer rule gone the money-side breaker catches those debits at the action boundary, and the network would decline them regardless. The cost of losing a rule appears one layer down — which is exactly why the `Breaker refusals` column was added, and why rules 1 and 6 now read as ₹0 in the old column.
 
-**Rule 7 changes nothing on this data**, and that is reported rather than quietly dropped. No record in these seeds has a mandate expiring inside the notice window. It is kept because it prevents a real and expensive mistake (the audit that created it found the scheduler placing a retry six days past expiry), and a rule guarding a rare catastrophe still earns its place. But it has been exercised only by tests, never by a batch.
+Rule 5 is the most expensive to remove in attempts. Rules 1 and 6 are the two whose removal is caught by the breaker instead.
+
+**Rules 3 and 7 change nothing on this data**, for two different reasons, and both are reported rather than quietly dropped.
+
+Rule 3 (mandate not active) used to be the most expensive rule to remove, at 84.8 attempts. It now costs nothing, because the pre-flight mandate status call at the action boundary catches the same records one layer later and refuses *without spending an attempt*. The rule and the boundary check are genuinely redundant here — and the redundancy is deliberate, since the decision-layer rule is the one that produces the `RE_MANDATE_LINK` escalation and the boundary check is the one that survives the world changing after the decision.
+
+Rule 7 (mandate expires before the notice period elapses) is different: no record in these seeds has a mandate expiring inside the notice window at all, so the rule simply never fires. It is kept because it prevents a real and expensive mistake — the audit that created it found the scheduler placing a retry six days past expiry and reporting a confident `p=0.62` for it — and a rule guarding a rare catastrophe still earns its place. But it has been exercised only by tests, never by a batch, and saying so is cheaper than being caught not saying it.
 
 ### 5.4 The machine learning did not work, and that is the finding
 
@@ -230,7 +281,7 @@ The engine emits an `expected_success` with every scheduled retry. Bucketed pred
                                ▼
   ┌──────────── DECIDE (decide.py) ───────────────────────────────────┐
   │  ** NO LANGUAGE MODEL RUNS HERE **                                 │
-  │  8 stopping rules in order, then a deterministic grid search over  │
+  │  7 stopping rules in order, then a deterministic grid search over  │
   │  the legal retry window for the moment of highest expected success │
   │  emits: action, rule_fired, scheduled_at, expected_success, verdict│
   └────────────────────────────┬──────────────────────────────────────┘
@@ -265,20 +316,20 @@ The engine emits an `expected_success` with every scheduled retry. Bucketed pred
 | `sim/model.py` | 97 | The assumed success probabilities, as named constants. Terminal classes are hard zero. This is the file to read before believing any number. |
 | `sim/seed.py` | 191 | Deterministic batch generator. Failure mix skewed to `insufficient_funds`. Three hazards seeded in deliberately (see §12). |
 | `diagnose.py` | 281 | Dictionary-authoritative classification; Claude Haiku on the unmapped tail and on a scored sample of the head; RunFuse-wrapped; containment boundaries so no AI fault reaches the money stage. |
-| `decide.py` | 274 | The eight stopping rules and the timing grid search. **No model runs here.** Emits `rule_fired` so the viewer never reimplements the ordering. |
-| `policy.py` | 144 | `RecoveryPolicy` and `RecoveryFuse`: the money-side circuit breaker. Caps on attempts, per-debit amount, batch actions and batch value; soft warning at 80%; refuses non-positive amounts. |
-| `execute.py` | 354 | Runs one arm over a batch. Shared random draw, pre-flight mandate re-check, physical constraints applied to both arms, ledger writes, `BatchResult` with `truncated` detection. |
+| `decide.py` | 353 | Seven stopping rules, a scheduling rule, and the timing grid search. **No model runs here.** Emits `rule_fired` and a structured `Escalation` so the viewer never reimplements the ordering or reparses the prose. The scorer is injected, defaulting to the simulator's. |
+| `policy.py` | 188 | `RecoveryPolicy` and `RecoveryFuse`: the money-side circuit breaker. **Per-debit** limits (RBI cap, per-subscription budget) raise `ActionRefused` — that debit is refused, the batch continues. **Aggregate** limits (batch actions, batch value) raise `RecoveryTripped` and stop the run. Soft warning at 80%; refuses non-positive amounts. |
+| `execute.py` | 430 | Runs one arm over a batch. Shared random draw; `mandate_status_at()` is the world and takes no arm argument; four physical constraints applied to both arms; the sequencer's pre-flight status call is a behaviour, not a different world. Ledger writes, `BatchResult` with `truncated` detection and a refusal count. |
 | `ledger.py` | 195 | Append-only HMAC-SHA256 hash chain in SQLite. `verify()` reports the first broken row index and whether the chain is keyed. |
-| `report.py` | 198 | The text report. Enforces a single basis in the compliance-adjusted table, prints the raw figures alongside, refuses to present a truncated run as a result, and always prints the full exception list. |
-| `export.py` | 258 | Serialises a real run to JSON for the viewer, including four real scenario runs. |
-| `experiments.py` | 375 | Seed sweep, attribution decomposition, sensitivity / breaking point, rule ablation, calibration. |
+| `report.py` | 267 | The text report. One basis (raw and adjusted now coincide, both printed so it can be checked), the escalation queue, `pushed_to_halt()` for recoverable subscriptions each arm killed, refuses to present a truncated run as a result, and always prints the full exception list grouped on structured fields. |
+| `export.py` | 266 | Serialises a real run to JSON for the viewer, including four real scenario runs. |
+| `experiments.py` | 448 | Seed sweep, attribution decomposition, sensitivity / breaking point, rule ablation, calibration. |
 | `bandit.py` | ~300 | Thompson-sampling learned timing, with hostile in-/out-of-distribution evaluation. Not wired into the engine. |
 | `promise.py` | 151 | Promise-to-pay. May move a retry later and nothing else. Trust decays after 2 broken promises. |
 | `nudge.py` | 235 | Hinglish drafting with guardrails. **No send path exists**, and a test asserts its absence. |
-| `webhook.py` | 228 | Razorpay ingestion: signature before parsing, `compare_digest`, replay rejection, conservative defaults. Decides nothing. |
-| `razorpay_adapter.py` | 266 | Test-mode only, refuses live keys, probes account capability rather than assuming. |
+| `webhook.py` | 260 | Razorpay ingestion: signature before parsing, `compare_digest`, replay rejection, conservative defaults. Derives `attempts_used` from our own ledger rather than Razorpay's `paid_count`, and leaves `salary_day` unknown rather than inventing one. Decides nothing. |
+| `razorpay_adapter.py` | 272 | Test-mode only, refuses live keys, probes account capability rather than assuming. |
 | `logging.py` | 86 | Operational JSON lines. Silent unless `VASOOLI_LOG` is set. |
-| `cli.py` | 402 | Ten commands, see §14. |
+| `cli.py` | 448 | Ten commands, see §14. |
 
 ### Interface, `web/src/`
 
@@ -306,16 +357,18 @@ The engine emits an `expected_success` with every scheduled retry. Bucketed pred
 
 Rules are checked **in this order**. Order matters: the cheapest and most certain refusals come first, so no work is done on a record that was never eligible.
 
-| # | Condition | Action | Why |
-|---|---|---|---|
-| 1 | `attempts_remaining <= 0` | `STOP_EXHAUSTED` | Razorpay halts the subscription on a further attempt. |
-| 2 | Failure class is terminal | `STOP_TERMINAL` | `MANDATE_REVOKED`, `MANDATE_EXPIRED`, `MANDATE_PAUSED`, `LIMIT_EXCEEDED`. No retry can succeed. |
-| 3 | `mandate_status != active` | `STOP_TERMINAL` | Even when the error text reads as recoverable. The mandate is the authority, not the error string. |
-| 4 | Class is `UNKNOWN` | `HUMAN_REVIEW` | Never auto-act on a guess. |
-| 5 | `amount > mandate_max_amount` | `HUMAN_REVIEW` | Guaranteed rejection on presentation. |
-| 6 | `amount > ₹15,000` | `HUMAN_REVIEW` | Outside the unattended envelope under the RBI framework. |
-| 7 | Mandate expires before the notice period elapses | `STOP_TERMINAL` | No lawful window exists at all. |
-| 8 | Otherwise | `RETRY_SCHEDULED` | Grid search for the best moment, bounded by mandate validity. |
+| # | Condition | Action | Escalation | Why |
+|---|---|---|---|---|
+| 1 | `attempts_remaining <= 0` | `STOP_EXHAUSTED` | `WINBACK_CAMPAIGN` | Razorpay halts the subscription on a further attempt. |
+| 2 | Failure class is terminal | `STOP_TERMINAL` | `RE_MANDATE_LINK`, or `MANDATE_UPGRADE` for `LIMIT_EXCEEDED` | `MANDATE_REVOKED`, `MANDATE_EXPIRED`, `MANDATE_PAUSED`, `LIMIT_EXCEEDED`. No retry can succeed. |
+| 3 | `mandate_status != active` | `STOP_TERMINAL` | `RE_MANDATE_LINK` | Even when the error text reads as recoverable. The mandate is the authority, not the error string. |
+| 4 | Class is `UNKNOWN` | `HUMAN_REVIEW` | `HUMAN_REVIEW` | Never auto-act on a guess. |
+| 5 | `amount > mandate_max_amount` | `HUMAN_REVIEW` | `MANDATE_UPGRADE` | Guaranteed rejection on presentation. |
+| 6 | `amount > ₹15,000` | `HUMAN_REVIEW` | `AFA_PAYMENT_LINK` | Above the RBI AFA-free cap, an unattended debit is declined. Route it to a customer-present flow instead. |
+| 7 | Mandate expires before the notice period elapses | `STOP_TERMINAL` | `RE_MANDATE_LINK` | No lawful window exists at all. |
+| 8 | Otherwise | `RETRY_SCHEDULED` | `NONE` | Grid search for the best moment, bounded by mandate validity. |
+
+**Seven of the eight are stopping rules; rule 8 is the scheduling rule.** Every stop carries an `Escalation`, because refusing to debit is only half an answer — the rupee is still owed, and where it goes next is part of the decision, not a footnote to it.
 
 **Rules 1–3 exist because the budget is only three deep.** Spending an attempt on a record that could never have succeeded is the most expensive mistake available to this system, and it is invisible unless you look for it.
 
@@ -341,11 +394,15 @@ success  ⟺  u[seed, sub, attempt]  <  p(failure_class, attempt, when_arm_retri
 
 So the sequencer cannot win by getting luckier records. It can only win by choosing better moments, and by declining to spend attempts that were never going to land. If the thesis were wrong, the sequencer would lose on the same draws.
 
-**Physical constraints bind both arms** before any probability is considered: a dead mandate cannot be debited, a debit above the mandate cap is rejected, and a debit presented after expiry is rejected. These are properties of the world, not of strategy.
+**Four physical constraints bind both arms** before any probability is considered: a dead mandate cannot be debited, a debit above the mandate's own registered cap is rejected, a debit above the RBI AFA-free cap is declined for want of additional factor authentication, and a debit presented after expiry is rejected. These are properties of the world, not of strategy, and `_attempt()` takes no `arm` argument by which it could tell them apart — a test parses its AST and fails if the word reappears.
 
 **The baseline is naive about strategy, not about law.** It retries on a fixed T+1/T+3/T+5 schedule and ignores failure class and mandate state. It still respects the RBI pre-debit notice floor and the same batch breaker, because comparing a compliant system against a non-compliant one would prove nothing.
 
-**The late-revocation hazard.** A deterministic 8% of subscriptions have their mandate revoked between the decision and the attempt. The sequencer re-checks at the action boundary and refuses; the baseline does not and burns the attempt. This mirrors RunFuse's reason for tripping at call boundaries rather than mid-tool: a check performed at the wrong moment lets the world change underneath the decision.
+**The late-revocation hazard.** A deterministic 8% of subscriptions have their mandate revoked between the decision and the attempt. This is modelled as `mandate_status_at(record)` — **the world, with no arm argument** — and `_attempt()` consults it for either arm, so a debit presented against a revoked mandate fails whoever presented it.
+
+What differs is behaviour, not physics. The sequencer makes an explicit pre-flight status call at the action boundary and declines *without spending an attempt*; the baseline does not ask, spends the attempt, and learns the same fact from the rejection. That is the real-world distinction — paying for a status call versus paying with a retry — and it is defensible in a way the earlier implementation was not. This mirrors RunFuse's reason for tripping at call boundaries rather than mid-tool: a check performed at the wrong moment lets the world change underneath the decision.
+
+Sensitivity is published rather than asserted: with the hazard removed entirely (`LATE_REVOCATION_RATE = 0`) the gain falls from ₹349.92 to ₹320.39 per attempt. It contributes 8%.
 
 ---
 
@@ -396,8 +453,10 @@ Six independent layers, each with a different job. Listed because "bounded and g
 
 | Layer | Where | Guards against |
 |---|---|---|
-| **Stopping rules** | `decide.py` | Spending an attempt that cannot succeed, or acting above the compliance envelope. 8 rules, each with a test that fails if the rule is deleted. |
-| **RecoveryFuse** | `policy.py` | An unattended batch moving too many rupees or taking too many actions. Hard trip with a verdict string, soft warning at 80%, refuses non-positive amounts. |
+| **Stopping rules** | `decide.py` | Spending an attempt that cannot succeed, or acting above the compliance envelope. 7 rules, each with a test that fails if the rule is deleted, and each carrying the escalation route it hands off to. |
+| **RecoveryFuse, per debit** | `policy.py` | A single debit above the RBI AFA-free cap, or a fourth attempt on a three-attempt budget. Raises `ActionRefused`: that debit is refused, the batch continues. Refusing rather than tripping is deliberate — a per-debit limit that halted the run would truncate the measurement it protects, which is logged defect 2. |
+| **RecoveryFuse, aggregate** | `policy.py` | An unattended batch moving too many rupees or taking too many actions. Raises `RecoveryTripped` and stops the run, with a verdict string. Soft warning at 80%, refuses non-positive amounts. |
+| **The world** | `execute.py` | The last line: an above-cap, expired, over-mandate-cap or revoked debit is declined on presentation regardless of which arm presented it. Not a guardrail we control, which is why the other two exist above it. |
 | **RunFuse** | `diagnose.py` | The AI stage: step ceiling, error ceiling, retry storms against the gateway. |
 | **Containment boundaries** | `diagnose.py` | Any AI-stage fault degrading that record to human review rather than killing the batch. |
 | **Pre-flight re-check** | `execute.py` | State changing between the decision and the action. |
@@ -409,7 +468,7 @@ Six independent layers, each with a different job. Listed because "bounded and g
 
 But it guards the **AI** side: model spend, step ceilings, retry storms. It does not cap rupees, and claiming otherwise would be exactly the overclaim this project is built to be the opposite of. So the money side has its own breaker, `RecoveryFuse`, deliberately built on RunFuse's semantics because those semantics are right: hard limits that raise rather than warn, a human-readable verdict on every trip, a soft threshold before the hard stop, and **trips checked at the action boundary, never mid-action.**
 
-**Verified empirically, not assumed:** RunFuse's `max_steps` trips precisely at the boundary and its step counting is exact. Its `max_cost_usd` is **inert** on this deployment, because the gateway reports a model absent from RunFuse's pricing table and cost accounts as `$0`. That is documented in `diagnose.py` rather than left looking like a working limit.
+**Verified empirically, not assumed:** RunFuse's `max_steps` trips precisely at the boundary and its step counting is exact. Its `max_cost_usd` is **inert against an unpriced model**, because the gateway reports a model absent from RunFuse's pricing table and cost accounts as `$0`. `.env.example` now defaults to a public endpoint with a priced model id, which makes the limit real rather than decorative; the local development gateway is kept as a commented alternative with that caveat attached. This is logged defect 1, and it is the same shape as defect 18 — a limit that looks like protection.
 
 ### On the audit trail, honestly
 
@@ -444,7 +503,7 @@ Stated plainly, because the track's bar rewards honest metrics over inflated one
 ### Real
 
 - **Live Razorpay test-mode API calls.** `uv run vasooli live` probes the account's actual capabilities and creates a real test-mode Plan, Subscription and Orders, logged to the audit trail with their IDs.
-- **The failure taxonomy, all eight stopping rules, both circuit breakers, the hash chain, and the arm comparison logic.** All of it runs; none of it is mocked in the measurement path.
+- **The failure taxonomy, all seven stopping rules, both circuit breakers, the hash chain, and the arm comparison logic.** All of it runs; none of it is mocked in the measurement path.
 - **Claude Haiku** classification of free-text bank errors and Hinglish nudge drafting.
 
 ### What the numbers do and do not claim
@@ -532,7 +591,7 @@ cp .env.example .env      # test-mode Razorpay keys only
 | `uv run vasooli verify-ledger` | Recompute the audit hash chain |
 
 ```bash
-uv run pytest          # 194 tests, hermetic
+uv run pytest          # 213 tests, hermetic
 cd web && npm install && npm run dev
 ```
 
@@ -552,7 +611,7 @@ cd web && npm install && npm run dev
 
 ## 15. Test inventory
 
-**194 tests, hermetic.** No network, no API key, no gateway. CI is given no credentials on purpose, so a test that starts needing one fails there rather than in front of a reader.
+**213 tests, hermetic.** No network, no API key, no gateway. CI is given no credentials on purpose, so a test that starts needing one fails there rather than in front of a reader.
 
 | File | Tests | Covers |
 |---|---:|---|
@@ -612,7 +671,7 @@ Kept in full because the track grades *"what broke, and what you did about it"*,
 
 **12. The compliance-adjusted headline had a raw number in it.** The table is labelled compliance-adjusted and its "recovered" row excludes above-cap debits, but its "recovered / attempt" row divided *raw* recovery by attempts, putting those debits back into the baseline's numerator. Two bases inside one table. The same bug existed independently in the interface.
 
-**13. The project's stated mechanism was mostly not the mechanism.** The sensitivity sweep was built expecting the advantage to collapse once the payday gap closed. It barely moved. Attribution showed refusal doing 83% of the work. Nothing was broken in the code; what was wrong was the story being told about it.
+**13. The project's stated mechanism was mostly not the mechanism.** The sensitivity sweep was built expecting the advantage to collapse once the payday gap closed. It barely moved. Attribution showed refusal doing 83% of the work (82% after the later cap fix). Nothing was broken in the code; what was wrong was the story being told about it.
 
 **14. An unreachable model was scored as disagreement.** With the gateway down, the run reported 20 disagreements as if a working model had given 20 different answers, rather than 24 failed calls. An accuracy signal computed from calls that never happened is a lie. A fuse trip was also being swallowed by the same broad catch.
 
@@ -624,6 +683,24 @@ Kept in full because the track grades *"what broke, and what you did about it"*,
 
 **17. The viewer reimplemented the engine's stopping-rule ordering**, and **the money breaker accepted a negative debit**, which would *decrease* the batch's attempted total and quietly raise the ceiling for every action after it.
 
+### Found by an external code review
+
+An external reviewer read the money path and raised three defects plus several credibility gaps. All three were real, and verifying them turned up two more the reviewer had not named. These are the most serious findings in this log, because unlike the others they were load-bearing for the project's own headline.
+
+**18. The money-side breaker declared two limits and enforced neither.** `RecoveryPolicy` carried `max_auto_amount_paise` (commented *"Above this, a human approves the debit"*) and `max_attempts_per_subscription` (*"Never exceed"*). `RecoveryFuse.check()` enforced only the two aggregate ceilings. Neither field was read anywhere in `vasooli/` — only by a test asserting their default values. `check()` did not even take a subscription id, so the per-subscription limit was not *representable*, let alone enforced.
+
+This is the third instance of the same shape in this log, after defects 1 and 2. The file's own test module opens with the line *"Limits that do not trip are decoration."* Both are enforced now, as `ActionRefused` rather than `RecoveryTripped`: a per-debit limit that halted the batch would truncate the comparison it exists to protect, which is defect 2 all over again.
+
+**19. The simulator paid out on debits the network would decline, and it flattered the baseline by ₹73,653.24.** `_attempt()` applied three physical constraints but never checked `needs_human_approval` — the RBI AFA-free cap. The baseline reaches these records (it never calls `decide()`), spends five attempts on them, and was credited with recovering money no bank would have released. The *entire* "baseline wins on raw, loses compliance-adjusted" story — the strongest forty seconds of the pitch — rested on that credit. The compliance headline was correcting a simulator error rather than measuring a behaviour.
+
+Fixing it did not weaken the finding, it sharpened it: the baseline was not merely breaking a rule, it was burning attempts on debits that could never settle. Raw and adjusted now coincide, and the ablation shows all three refusal layers holding independently.
+
+**20. The webhook derived the retry count from successful charges.** `attempts_used` came from Razorpay's `paid_count`, which counts *paid* cycles. A healthy subscription with ten paid cycles and two remaining arrived as `attempts_used=3`, `attempts_remaining=0`, and rule 1 refused it as exhausted before anything else ran. Absent `remaining_count` it yielded `0`, the opposite extreme. The `min(..., 3)` that hid this existed only to dodge a pydantic `ValidationError`. **No test covered it** — the shared fixture omitted both fields, so every existing test took the `0` branch. It now counts prior `payment.failed` events in our own ledger, which is the only honest source. `salary_day=1` was also hardcoded, so live events were timed around an invented payday; it is optional now, and unknown schedules at the legal floor and says so.
+
+**21. The late-revocation hazard differed between arms by label, not by state.** `_late_revocation()` is a pure hash. Both arms called *the same function with the same arguments*, gated by `if arm == "sequencer"` / `if arm == "baseline"`. The revocation was never written to the record, so `_attempt`'s real mandate guard could not see it. Nothing observable to one arm was unobservable to the other — the hazard was a rule that favoured one arm rather than a fact both arms faced, and it accounted for 9 records and ₹11,891 of "attempts preserved by the pre-flight re-check". It is now `mandate_status_at(record)`, which takes no arm argument; a test parses `_attempt`'s AST and fails if the word `arm` reappears in it. Published sensitivity: removing the hazard entirely costs 8% of the gain.
+
+**22. The exception list fragmented into groups of one.** Both `report.py` and `ExceptionList.tsx` grouped by a prefix of the verdict string, split on an em dash — but rules 5 and 6 interpolate the rupee amount *before* that separator, so each above-cap record became its own group. `rule_fired` already existed on `Decision` and was the correct key; it simply was not carried onto `RecordOutcome`. Both now group on the structured `(rule_fired, escalation)` pair.
+
 ### Two non-bugs, investigated and left alone
 
 - `focus:outline-none` on two inputs looked like it killed the focus ring. Measured: it does not. Tailwind v4 emits utilities inside `@layer`, and unlayered CSS wins the cascade regardless of specificity.
@@ -631,7 +708,9 @@ Kept in full because the track grades *"what broke, and what you did about it"*,
 
 ### The pattern
 
-Nearly every one was something that **looked** like it was working. Several were guardrails that were themselves the hazard: an inert cost limit, a breaker that truncated the measurement it was protecting, a nudge guardrail that rejected safe drafts while missing the dangerous case, and an audit script that produced confident false readings twice.
+Nearly every one was something that **looked** like it was working. Several were guardrails that were themselves the hazard: an inert cost limit, a breaker that truncated the measurement it was protecting, a nudge guardrail that rejected safe drafts while missing the dangerous case, two audit scripts that produced confident false readings, and a `RecoveryPolicy` that advertised two limits it never applied.
+
+The last group is worth separating. Defects 18 through 22 came from an **external** review, and they are the ones that mattered most — not because they were subtler, but because three of the previous seventeen were found by looking for the *same* class of bug I had already found, whereas the reviewer found the one I could not see: my own headline resting on a simulator artefact. The lesson is not "audit harder", it is that the thing you are least able to audit is the mechanism your own claim depends on.
 
 That is what the audit trail, the arm comparison, and a deliberate adversarial audit are for, and it is why "it runs and the tests pass" was not where this stopped.
 
@@ -645,7 +724,7 @@ Everything in the original plan, plus everything found while building it. Full r
 
 | Area | State |
 |---|---|
-| Engine, 8 stopping rules, both breakers, hash chain | Complete |
+| Engine, 7 stopping rules + scheduling, both breakers, hash chain | Complete |
 | Two-arm measurement with shared draws | Complete |
 | Seed sweep, attribution, sensitivity, ablation, calibration | Complete |
 | Hinglish nudge drafter, guardrailed, no send path | Complete |
@@ -687,7 +766,7 @@ Nothing here needs credentials. Every claim in this README is checkable from a c
 git clone https://github.com/akshat333-debug/Vasooli && cd Vasooli
 uv venv && uv pip install -e ".[dev]"
 
-uv run pytest                    # 194 tests pass with no network
+uv run pytest                    # 213 tests pass with no network
 uv run vasooli run               # reproduces the headline table
 uv run vasooli experiments       # reproduces the sweep and attribution
 uv run vasooli bandit            # reproduces the negative ML result
@@ -713,7 +792,7 @@ vasooli/
 ├── taxonomy.py          8 failure classes; explicit UNKNOWN
 ├── models.py            record schema; paise only; RBI caps encoded
 ├── diagnose.py          dictionary-authoritative + Haiku on the tail
-├── decide.py            8 stopping rules + deterministic scorer, no LLM
+├── decide.py            7 stopping rules + a scheduling rule, no LLM
 ├── policy.py            RecoveryFuse, the money-side breaker
 ├── execute.py           both arms, shared random draw, pre-flight re-check
 ├── ledger.py            HMAC-keyed hash chain, tamper located by row
@@ -732,9 +811,9 @@ vasooli/
     └── seed.py          seeded batch with three hazards built in
 
 web/                     Next.js 15 viewer, static export
-tests/                   194 tests across 17 files
+tests/                   213 tests across 17 files
 BATCH_REPORT.txt         the measured result, regenerate with `vasooli run`
-EXPERIMENTS.txt          the five checks, regenerate with `vasooli experiments`
+EXPERIMENTS.txt          the six checks, regenerate with `vasooli experiments --seeds 40`
 NEXT_STEPS.md            per-item record of what each upgrade was worth
 ```
 
