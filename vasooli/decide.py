@@ -108,6 +108,11 @@ class Escalation(StrEnum):
 class Decision(BaseModel):
     subscription_id: str
     action: Action
+    #: The class this decision was made about. Carried as a field because the
+    #: alternative -- reading it back out of the verdict string -- is how
+    #: nudge.py ended up telling a customer with a cancelled mandate that their
+    #: balance was low. Structured meaning belongs in a field.
+    failure_class: FailureClass
     #: When the retry should be attempted. None for every non-retry action.
     scheduled_at: datetime | None = None
     #: Assumed P(success) at the scheduled moment. None for non-retry actions.
@@ -241,7 +246,8 @@ def decide(
     def d(rule: int, action: Action, verdict: str,
           escalation: Escalation = Escalation.NONE, **kw) -> Decision:
         return Decision(subscription_id=rec.subscription_id, action=action,
-                        verdict=verdict, rule_fired=rule, escalation=escalation, **kw)
+                        failure_class=failure_class, verdict=verdict,
+                        rule_fired=rule, escalation=escalation, **kw)
 
     def on(rule: int) -> bool:
         return rule not in disabled_rules

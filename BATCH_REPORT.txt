@@ -101,7 +101,7 @@ FAILURE MIX
 ------------------------------------------------------------------------------
 CONTROLS
 ------------------------------------------------------------------------------
-  Audit chain verified : INTACT (1359 rows)
+  Audit chain verified : INTACT (453 rows)
     chain intact, unkeyed — detects accidental edits, but anyone with write access could rebuild it; set VASOOLI_LEDGER_KEY to prevent that
   Batch breaker        : not tripped
 ==============================================================================

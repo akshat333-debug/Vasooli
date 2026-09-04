@@ -10,7 +10,19 @@ const EVENT_TONE: Record<string, string> = {
   decision: "#8f8fe8",
   attempt: "#1c1b19",
   preflight_refusal: "#d9ac43",
+  // A per-debit refusal at the money boundary. Distinct from a fuse_trip: this
+  // one debit is refused and the batch carries on. It is what the headline's
+  // "breaker refusals" column counts, so it gets its own colour rather than
+  // falling through to the anonymous grey.
+  breaker_refusal: "#b5533f",
   fuse_trip: "#b5533f",
+  promise_applied: "#8f8fe8",
+  webhook_received: "#8fae86",
+  webhook_duplicate: "#6f6a60",
+  webhook_ignored: "#6f6a60",
+  nudge_drafted: "#8f8fe8",
+  nudge_rejected: "#d9ac43",
+  nudge_unavailable: "#6f6a60",
   razorpay_probe: "#6f6a60",
   razorpay_order_created: "#8fae86",
   razorpay_subscription_created: "#8fae86",

@@ -258,15 +258,24 @@ def diagnose_batch(
     if fuse:
         try:
             with fuse.run("diagnose-batch"), timed("diagnose.batch", records=len(records)):
-                out = [_run(r) for r in records]
+                # Appended one at a time, deliberately. This was a list
+                # comprehension, and a comprehension is atomic: when the fuse
+                # tripped partway through, `out` was never rebound and stayed
+                # empty, so every record classified before the trip was silently
+                # thrown away and re-run through the dictionary. The comment
+                # below claimed those records were kept and they were not, and
+                # `classified_before_trip` logged 0 on every single trip.
+                for rec in records:
+                    out.append(_run(rec))
         except Exception as e:  # noqa: BLE001 - containment boundary
             # A RunFuse trip or internal fault must not destroy the batch. The
             # guardrail exists to bound the AI stage, not to be able to kill the
             # money stage — a limit that can take down more than it protects is
             # a worse failure than the one it was guarding against.
             #
-            # Records already classified are kept. The remainder fall back to the
-            # dictionary, which needs no model, and anything the dictionary
+            # Records already classified ARE kept, including anything the model
+            # rescued from UNKNOWN before the trip. The remainder fall back to
+            # the dictionary, which needs no model, and anything the dictionary
             # cannot name becomes human review.
             stats["fuse_aborted"] = 1
             stats["fuse_reason"] = str(e)[:200]

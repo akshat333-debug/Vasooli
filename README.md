@@ -61,7 +61,7 @@ That reframing is the whole project. Not *retry harder*, but **allocate three at
 | **Engine** | Python 3.11+, 18 modules, ~4,710 lines |
 | **Interface** | Next.js 15 + TypeScript + Tailwind v4, ~2,220 lines, 4 pages |
 | **Tests** | **213**, hermetic: no network, no API keys, no gateway |
-| **Coverage** | **91%** on the engine (CI floor 90%) |
+| **Coverage** | **92%** on the engine (CI floor 90%) |
 | **Lint** | `ruff` clean; `tsc --noEmit` clean |
 | **CI** | GitHub Actions, engine + web, given no credentials on purpose |
 | **Live integration** | Razorpay test-mode Plan, Subscription and Orders created for real |
@@ -595,7 +595,7 @@ cp .env.example .env      # test-mode Razorpay keys only
 | `uv run vasooli verify-ledger` | Recompute the audit hash chain |
 
 ```bash
-uv run pytest          # 222 tests, hermetic
+uv run pytest          # 227 tests, hermetic
 cd web && npm install && npm run dev
 ```
 
@@ -615,11 +615,11 @@ cd web && npm install && npm run dev
 
 ## 15. Test inventory
 
-**222 tests, hermetic.** No network, no API key, no gateway. CI is given no credentials on purpose, so a test that starts needing one fails there rather than in front of a reader.
+**227 tests, hermetic.** No network, no API key, no gateway. CI is given no credentials on purpose, so a test that starts needing one fails there rather than in front of a reader.
 
 | File | Tests | Covers |
 |---|---:|---|
-| `test_audit_regressions.py` | 20 | One per defect found in the audits; each fails if the fix is reverted |
+| `test_audit_regressions.py` | 45 | One per defect found in the audits; each fails if the fix is reverted |
 | `test_webhook.py` | 15 | Signature, replays, conservative defaults, UTC timestamps |
 | `test_decide.py` | 14 | Every stopping rule, rule ordering, the legal floor, timing |
 | `test_experiments.py` | 14 | Sweep, attribution, ablation, calibration, assumption restoration |
@@ -706,9 +706,24 @@ Fixing it did not weaken the finding, it sharpened it: the baseline was not mere
 
 **22. The exception list fragmented into groups of one.** Both `report.py` and `ExceptionList.tsx` grouped by a prefix of the verdict string, split on an em dash — but rules 5 and 6 interpolate the rupee amount *before* that separator, so each above-cap record became its own group. `rule_fired` already existed on `Decision` and was the correct key; it simply was not carried onto `RecordOutcome`. Both now group on the structured `(rule_fired, escalation)` pair.
 
+### Found in a second full module-and-flow audit
+
+Five more, from reading every module and tracing every flow end to end after the external review had been acted on. Three of the five are the same shape as defect 22: structured meaning being re-derived from prose, or a number computed against the wrong denominator.
+
+**23. The AI-stage breaker threw away everything it had already done.** `diagnose_batch` ran its classifications as `out = [_run(r) for r in records]`. A list comprehension is atomic: when the RunFuse trip fired partway through, `out` was never rebound and kept its initial empty value, so every record already classified — including anything the model had rescued from `UNKNOWN` on the tail — was silently discarded and re-run through the dictionary. The comment directly above claimed *"Records already classified are kept"*, and the operational log line `classified_before_trip=len(out)` reported **0 on every trip**, which is what made it invisible. Measured: 5 model calls made and paid for, 0 results surviving. Now appended one at a time, with a test that trips the fuse at call 6 and asserts 5 survive.
+
+**24. The nudge drafter read the failure class out of its own verdict string.** `draft_one` picked the message brief by substring-matching `decision.verdict` for a `FailureClass` name. On seed 42 that was wrong for **18 of 45** flagged records. Thirteen were rule 1, whose verdict ("retry budget exhausted") names no class at all, so they fell through to a contentless *"the payment did not go through"* — on precisely the records where the message matters most, because no retry is coming. Five more were **actively misleading**: rule 3's verdict reads *"mandate is revoked despite a INSUFFICIENT_FUNDS failure"*, the match landed on `INSUFFICIENT_FUNDS`, and a customer whose mandate had been cancelled was told their balance was low. `Decision` now carries `failure_class` as a field, and the brief is keyed on the escalation route first — because the route is what the customer must *do*, and a message naming the wrong action is worse than a vague one. Zero generic fallbacks now, and a test asserts the brief does not move when the verdict is reworded.
+
+**25. The attempt ledger divided by the wrong denominator.** The signature view calls all 300 cells *"available retry attempts"* and reported the baseline at **160 / 300 = 53%**. But 105 of those attempts were spent before the batch ever arrived — the component renders them as a distinct "Already gone" state in its own legend. The real figures are **160 / 195 = 82%** for the baseline and **77 / 195 = 39%** for the sequencer. The chart understated its own argument by a third and called consumed attempts available.
+
+**26. One word, two numbers, same page.** The grid's legend said "Preserved" (118) while the stat card beside it said "Attempts preserved" (86). Both were correct for different definitions — the grid counted every unspent cell, including leftovers on records that recovered on the first try; the card counted only attempts the engine declined to spend on a record it refused. The grid now says **Unspent**, and the docstring states why the two are not the same quantity.
+
+**27. New ledger events rendered anonymous.** `LedgerStream`'s colour map predated `breaker_refusal`, `promise_applied` and the webhook and nudge events, so all of them fell through to undifferentiated grey — including `breaker_refusal`, which is exactly what the headline's new "breaker refusals" column counts.
+
 ### Two non-bugs, investigated and left alone
 
 - `focus:outline-none` on two inputs looked like it killed the focus ring. Measured: it does not. Tailwind v4 emits utilities inside `@layer`, and unlayered CSS wins the cascade regardless of specificity.
+- **The records page appeared completely dead** — filters inert, rows not expanding, no React handlers attached to any element. It was my own dev server, corrupted by running `next build` against a live `next dev`. Every control works against a clean production build. I had already rewritten `useUrlState` to stop using `router.replace` before establishing that; `router.replace` was never broken, so the rewrite was reverted rather than kept.
 - A contrast script reported 24 failures at 1.22:1. Tailwind v4 emits `oklab()`, and the regex was reading its 0–1 components as 0–255 RGB. Rewritten to resolve any colour format through a canvas; the honest count was 7.
 
 ### The pattern
@@ -737,7 +752,7 @@ Everything in the original plan, plus everything found while building it. Full r
 | Webhook ingestion | Complete |
 | Learned retry timing (bandit) | Complete, **negative result**, not wired in |
 | Keyed audit chain, property tests, structured logging | Complete |
-| CI, 91% coverage with a 90% floor | Complete |
+| CI, 92% coverage with a 90% floor | Complete |
 | Web interface, 4 pages, WCAG AA, deep-linkable | Complete |
 | Razorpay test-mode integration | Complete |
 
@@ -771,7 +786,7 @@ Nothing here needs credentials. Every claim in this README is checkable from a c
 git clone https://github.com/akshat333-debug/Vasooli && cd Vasooli
 uv venv && uv pip install -e ".[dev]"
 
-uv run pytest                    # 222 tests pass with no network
+uv run pytest                    # 227 tests pass with no network
 uv run vasooli run               # reproduces the headline table
 uv run vasooli experiments       # reproduces the sweep and attribution
 uv run vasooli bandit            # reproduces the negative ML result
@@ -816,7 +831,7 @@ vasooli/
     └── seed.py          seeded batch with three hazards built in
 
 web/                     Next.js 15 viewer, static export
-tests/                   222 tests across 18 files
+tests/                   227 tests across 18 files
 BATCH_REPORT.txt         the measured result, regenerate with `vasooli run`
 EXPERIMENTS.txt          the six checks, regenerate with `vasooli experiments --seeds 40`
 NEXT_STEPS.md            per-item record of what each upgrade was worth

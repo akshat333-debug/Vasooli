@@ -42,7 +42,7 @@ import os
 import re
 from typing import TYPE_CHECKING, Any
 
-from .decide import Action, Decision
+from .decide import Action, Decision, Escalation
 from .ledger import Ledger
 from .models import AtRiskRecord
 
@@ -90,6 +90,26 @@ Hard rules:
 
 Say what happened and what the customer can do. Nothing else."""
 
+#: What the customer must DO. Keyed on the escalation route, because that is
+#: the axis a nudge is actually about -- a message exists to prompt an action,
+#: and the route IS the action. Takes precedence over the failure class, which
+#: only says what went wrong.
+ACTION_BRIEF = {
+    Escalation.RE_MANDATE_LINK:
+        "their autopay mandate is no longer usable and a new one must be set up",
+    Escalation.MANDATE_UPGRADE:
+        "the amount is above the limit on their autopay mandate, so the limit "
+        "needs raising or the payment splitting",
+    Escalation.AFA_PAYMENT_LINK:
+        "this amount is above the limit banks allow to be debited automatically, "
+        "so they will need to approve this one themselves",
+    Escalation.WINBACK_CAMPAIGN:
+        "the automatic retries for this cycle are finished and the subscription "
+        "will lapse unless they pay",
+}
+
+#: What WENT WRONG. Used when the route does not already imply the action, i.e.
+#: for a retry the engine still intends to make.
 REASON_BRIEF = {
     "MANDATE_REVOKED": "their autopay mandate was cancelled, so a new one is needed",
     "MANDATE_EXPIRED": "their autopay mandate has expired and needs to be set up again",
@@ -135,15 +155,32 @@ def render(draft: str, rec: AtRiskRecord) -> str:
     return draft.replace(AMOUNT_TOKEN, f"Rs {rec.amount_paise / 100:,.0f}")
 
 
+def brief_for(decision: Decision) -> str:
+    """What the message is about, from the decision's own fields.
+
+    This used to string-match the verdict for a failure-class name, which was
+    wrong twice over. Thirteen of forty-five flagged records on seed 42 fell
+    through to the generic default, because the rule-1 verdict ("retry budget
+    exhausted") names no class at all -- so the customer whose mandate was
+    cancelled AND whose budget was gone was told only that "the payment did not
+    go through". Five more were actively misleading: a rule-3 verdict reads
+    "mandate is revoked despite a INSUFFICIENT_FUNDS failure", the match landed
+    on INSUFFICIENT_FUNDS, and the customer was told their balance was low when
+    the real problem was a cancelled mandate they had to re-authorise.
+
+    The escalation route is checked first because it is what the customer must
+    do, and a message that names the wrong action is worse than a vague one.
+    """
+    route = ACTION_BRIEF.get(decision.escalation)
+    if route:
+        return route
+    return REASON_BRIEF.get(decision.failure_class.value,
+                            "the payment did not go through")
+
+
 def draft_one(client: OpenAI, rec: AtRiskRecord, decision: Decision) -> str:
     """One draft, validated. Raises NudgeRejected if it fails a guardrail."""
-    brief = REASON_BRIEF.get(
-        decision.verdict.split(":")[0].strip().upper(), "the payment did not go through"
-    )
-    for fc, text in REASON_BRIEF.items():
-        if fc in decision.verdict:
-            brief = text
-            break
+    brief = brief_for(decision)
 
     resp = client.chat.completions.create(
         model=os.environ.get("VASOOLI_LLM_MODEL", "kr/claude-haiku-4.5"),

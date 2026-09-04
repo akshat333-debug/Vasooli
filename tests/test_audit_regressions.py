@@ -526,3 +526,102 @@ def test_the_hazard_sensitivity_restores_the_rate():
     a = out["attribution"]
     assert a["from_refusing_paise"] + a["from_timing_paise"] == pytest.approx(
         a["total_gain_per_attempt_paise"], abs=0.2)
+
+
+# --- the AI-stage breaker used to discard everything it had already done -----
+
+def test_a_fuse_trip_keeps_the_classifications_made_before_it(monkeypatch):
+    # `out = [_run(r) for r in records]` is atomic: when the fuse tripped
+    # partway, `out` was never rebound and every record classified before the
+    # trip was silently thrown away and redone by the dictionary. The comment
+    # claimed they were kept, and `classified_before_trip` logged 0 every time.
+    import contextlib
+
+    from runfuse import FuseTripped
+
+    from vasooli import diagnose as dg
+
+    calls = {"n": 0}
+
+    def fake_ask(client, rec):
+        calls["n"] += 1
+        if calls["n"] > 5:
+            raise FuseTripped("simulated trip")
+        return FailureClass.INSUFFICIENT_FUNDS, True
+
+    class FakeFuse:
+        def wrap(self, c):
+            return c
+
+        def run(self, name):
+            return contextlib.nullcontext()
+
+    monkeypatch.setattr(dg, "_ask_llm", fake_ask)
+    monkeypatch.setattr(dg, "_client", lambda: object())
+    monkeypatch.setattr(dg, "Fuse", lambda p: FakeFuse())
+
+    records = generate_batch(20, seed=1)
+    out, stats = dg.diagnose_batch(records, use_llm=True)
+
+    assert stats["fuse_aborted"] == 1
+    # Every record still gets exactly one diagnosis, and none is duplicated.
+    assert len(out) == len(records)
+    assert len({d.subscription_id for d in out}) == len(records)
+    # The work done before the trip survives it.
+    consulted = [d for d in out if "llm" in d.rationale and "disabled" not in d.rationale]
+    assert len(consulted) == 5, "pre-trip classifications were thrown away again"
+
+
+# --- the nudge brief was read out of the verdict string ---------------------
+
+def test_a_dead_mandate_is_never_briefed_as_a_low_balance():
+    # decide.py's rule-3 verdict reads "mandate is revoked despite a
+    # INSUFFICIENT_FUNDS failure". Substring-matching it landed on
+    # INSUFFICIENT_FUNDS, so the customer was told their balance was low when
+    # the real problem was a mandate they had to re-authorise.
+    from vasooli.nudge import brief_for
+
+    rec = _rec(mandate_status=MandateStatus.REVOKED, attempts_used=0,
+               amount_paise=49900, mandate_max_amount_paise=100000)
+    d = decide(rec, FailureClass.INSUFFICIENT_FUNDS, BATCH_NOW)
+    assert d.rule_fired == 3
+    assert "balance" not in brief_for(d)
+    assert "mandate" in brief_for(d)
+
+
+def test_an_exhausted_budget_is_briefed_as_one():
+    # The rule-1 verdict names no failure class at all, so this fell through to
+    # a generic "the payment did not go through" -- on the records where the
+    # message matters most, because there is no retry coming.
+    from vasooli.nudge import brief_for
+
+    rec = _rec(attempts_used=MAX_RETRY_BUDGET, mandate_status=MandateStatus.ACTIVE)
+    d = decide(rec, FailureClass.INSUFFICIENT_FUNDS, BATCH_NOW)
+    assert d.rule_fired == 1
+    assert brief_for(d) != "the payment did not go through"
+    assert "retries" in brief_for(d)
+
+
+def test_no_flagged_record_falls_through_to_the_generic_brief():
+    from vasooli.diagnose import diagnose_batch
+    from vasooli.nudge import brief_for
+
+    records = generate_batch(100, seed=42)
+    diagnoses, _ = diagnose_batch(records, use_llm=False)
+    by = {d.subscription_id: d.failure_class for d in diagnoses}
+    flagged = [decide(r, by[r.subscription_id], BATCH_NOW) for r in records]
+    generic = [d for d in flagged
+               if d.wants_nudge and brief_for(d) == "the payment did not go through"]
+    assert not generic, f"{len(generic)} flagged records got a contentless brief"
+
+
+def test_the_brief_comes_from_fields_not_from_the_verdict():
+    # Reword a verdict and the brief must not move. This is the property the
+    # old implementation lacked.
+    from vasooli.nudge import brief_for
+
+    rec = _rec(mandate_status=MandateStatus.ACTIVE, attempts_used=0,
+               amount_paise=49900, mandate_max_amount_paise=100000)
+    d = decide(rec, FailureClass.MANDATE_REVOKED, BATCH_NOW)
+    before = brief_for(d)
+    assert before == brief_for(d.model_copy(update={"verdict": "totally different text"}))

@@ -14,8 +14,15 @@ import type { Arm, BatchRecord } from "@/lib/data";
  * Cell states:
  *   filled dark   an attempt was spent and the debit failed
  *   sage          an attempt was spent and the money came back
- *   hollow        the attempt was preserved — the engine declined to spend it
+ *   hollow        the attempt went unspent
  *   hatched       the record arrived with its budget already gone
+ *
+ * "Unspent" and "preserved" are NOT the same number and the interface must not
+ * imply they are. The grid's hollow cells include attempts left over on records
+ * that recovered on the first try -- unspent, but not preserved by a refusal.
+ * The stat card beside this counts only attempts the engine declined to spend
+ * on a record it would not act on, which is the smaller and more meaningful
+ * figure. One word for two quantities on the same page was a real ambiguity.
  *
  * Read the two rows against each other and the whole thesis is visible without
  * a single number: the baseline fills its grid, the sequencer leaves most of
@@ -74,7 +81,16 @@ function Row({
 }) {
   const cells = cellsFor(records, arm, budget);
   const spent = arm.attempts_spent;
-  const pct = Math.round((spent / cells.length) * 100);
+  // Attempts this batch could actually spend. NOT cells.length: a third of the
+  // grid arrived already consumed, which is why "Already gone" is a separate
+  // state in the legend. Dividing by the full grid called those attempts
+  // available, and reported the baseline as using 53% of its budget when it
+  // used 82% of what it had.
+  const prespent = cells.filter((c) => c.state === "prespent").length;
+  const available = cells.length - prespent;
+  const unspent = cells.filter((c) => c.state === "preserved").length;
+  const recovered = cells.filter((c) => c.state === "recovered").length;
+  const pct = available ? Math.round((spent / available) * 100) : 0;
 
   return (
     <div>
@@ -85,7 +101,9 @@ function Row({
         </div>
         <div className="tnum shrink-0 text-[12px] text-ink-mute">
           <span className="font-semibold text-ink">{spent}</span>
-          <span className="text-ink-faint"> / {cells.length} spent · {pct}%</span>
+          <span className="text-ink-faint">
+            {" "}/ {available} available · {pct}%
+          </span>
         </div>
       </div>
 
@@ -94,12 +112,11 @@ function Row({
           text. The grid itself is then hidden from the accessibility tree
           rather than read out as 300 anonymous divs. */}
       <p className="sr-only">
-        {label}: {spent} of {cells.length} available retry attempts were spent,
-        {" "}{cells.filter((c) => c.state === "recovered").length} of which
-        recovered the money. {cells.filter((c) => c.state === "preserved").length}
-        {" "}attempts were preserved, and{" "}
-        {cells.filter((c) => c.state === "prespent").length} had already been
-        spent before this batch began.
+        {label}: of the {cells.length} attempts this batch of {records.length}{" "}
+        subscriptions could ever hold, {prespent} were already spent before it
+        arrived, leaving {available} available. This arm spent {spent} of them
+        ({pct}%), {recovered} of which recovered the money, and left {unspent}{" "}
+        unspent.
       </p>
 
       <div
@@ -143,6 +160,8 @@ export default function AttemptLedger({
 }) {
   const [hover, setHover] = useState<BatchRecord | null>(null);
   const total = records.length * budget;
+  const alreadyGone = records.reduce((a, r) => a + r.attempts_used, 0);
+  const available = total - alreadyGone;
 
   return (
     <section className="rounded-2xl border border-rule bg-paper-raised p-6 sm:p-8">
@@ -152,12 +171,17 @@ export default function AttemptLedger({
           <h2 className="display max-w-xl text-[22px] leading-[1.25] font-semibold sm:text-[26px]">
             Every one of the {total} retries this batch was allowed to spend.
           </h2>
+          <p className="mt-2 max-w-xl text-[13px] leading-relaxed text-ink-mute">
+            {alreadyGone} of them were gone before the batch arrived, on records
+            that had already been retried. {available} were left to allocate,
+            and how each arm allocated them is the whole argument.
+          </p>
         </div>
         <dl className="flex flex-wrap gap-x-5 gap-y-2 text-[11px]">
           {[
             ["Recovered", "#8fae86", "solid"],
             ["Spent, failed", "#1c1b19", "solid"],
-            ["Preserved", "transparent", "solid"],
+            ["Unspent", "transparent", "solid"],
             ["Already gone", "transparent", "dashed"],
           ].map(([name, fill, style]) => (
             <div key={name as string} className="flex items-center gap-1.5">
