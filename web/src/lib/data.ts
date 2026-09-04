@@ -114,6 +114,9 @@ export interface Arm {
 }
 
 export interface LedgerEntry {
+  /** The hashed body, exported so the chain can be recomputed in the browser
+   *  rather than merely asserted. See lib/verifyChain.ts. */
+  payload?: Record<string, unknown>;
   idx: number;
   ts: string;
   run_id: string;

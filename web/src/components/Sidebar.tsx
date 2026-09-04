@@ -6,6 +6,7 @@ import { useState } from "react";
 
 const NAV = [
   { href: "/", label: "Batch", hint: "The run and its result" },
+  { href: "/rulebook", label: "Rulebook", hint: "The seven refusals" },
   { href: "/records", label: "Records", hint: "All 100 decisions" },
   { href: "/ledger", label: "Audit trail", hint: "Hash-chained rows" },
   { href: "/method", label: "Method", hint: "What is real, what is not" },
@@ -22,6 +23,13 @@ function Glyph({ name, active }: { name: string; active: boolean }) {
           <rect x="1.5" y="5" width="4" height="8" rx="1.4" fill={c} />
           <rect x="7" y="5" width="4" height="8" rx="1.4" {...common} />
           <rect x="12.5" y="5" width="4" height="8" rx="1.4" {...common} />
+        </svg>
+      );
+    case "Rulebook":
+      // A gate: the rules are what does not get through.
+      return (
+        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden>
+          <path d="M3 3v12M15 3v12M3 7h12M3 11h12" {...common} strokeLinecap="round" />
         </svg>
       );
     case "Records":

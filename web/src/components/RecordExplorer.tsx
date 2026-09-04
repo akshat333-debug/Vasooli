@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import DownloadData from "@/components/DownloadData";
 import { useUrlState } from "@/lib/useUrlState";
 import {
   ACTION_LABEL,
@@ -42,6 +43,9 @@ export default function RecordExplorer({ records }: { records: BatchRecord[] }) 
   const [filter, setFilter] = useUrlState("decision", "ALL");
   const [q, setQ] = useUrlState("q", "");
   const [openId, setOpenId] = useUrlState("record", "");
+  // Set by the Rulebook's "see the N records" links, so a rule's cost on that
+  // page and the records it actually stopped are one click apart.
+  const [rule, setRule] = useUrlState("rule", "");
 
   const counts = useMemo(() => {
     const m = new Map<string, number>();
@@ -53,6 +57,7 @@ export default function RecordExplorer({ records }: { records: BatchRecord[] }) 
     const term = q.trim().toLowerCase();
     return records.filter((r) => {
       if (filter !== "ALL" && r.action !== filter) return false;
+      if (rule && String(r.rule_fired) !== rule) return false;
       if (!term) return true;
       return (
         r.subscription_id.toLowerCase().includes(term) ||
@@ -61,10 +66,26 @@ export default function RecordExplorer({ records }: { records: BatchRecord[] }) 
         r.error_reason.toLowerCase().includes(term)
       );
     });
-  }, [records, filter, q]);
+  }, [records, filter, q, rule]);
 
   return (
     <>
+      {rule && (
+        <div className="mb-4 flex flex-wrap items-center gap-3 rounded-xl border border-rule bg-paper-raised px-4 py-2.5">
+          <span className="text-[13px] text-ink-soft">
+            Filtered to the records stopped by{" "}
+            <span className="font-mono text-[12.5px]">rule {rule}</span>, from
+            the Rulebook.
+          </span>
+          <button
+            onClick={() => setRule("")}
+            className="ml-auto text-[12.5px] text-ink underline decoration-rule underline-offset-4 hover:decoration-ink"
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
       <div className="mb-5 flex flex-wrap items-center gap-2.5">
         <div className="flex flex-wrap gap-1.5">
           <Chip active={filter === "ALL"} onClick={() => setFilter("ALL")}>
@@ -120,9 +141,15 @@ export default function RecordExplorer({ records }: { records: BatchRecord[] }) 
 
       {/* The count changes as a filter is typed, with no other announcement a
           screen reader would catch. */}
-      <p className="mt-3 text-[12.5px] text-ink-faint" aria-live="polite">
-        Showing {shown.length} of {records.length} records.
-      </p>
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-[12.5px] text-ink-faint" aria-live="polite">
+          Showing {shown.length} of {records.length} records.
+        </p>
+        {/* The rows behind the view, in whatever state it is filtered to. A
+            reader who doubts a figure should be able to recompute it rather
+            than take it. */}
+        <DownloadData records={shown} label="Download this view as CSV" />
+      </div>
     </>
   );
 }

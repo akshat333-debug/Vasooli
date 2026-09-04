@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Archivo, Instrument_Sans, JetBrains_Mono } from "next/font/google";
 import Sidebar from "@/components/Sidebar";
+import { batch } from "@/lib/data";
 import "./globals.css";
 
 const archivo = Archivo({
@@ -48,6 +49,15 @@ export default function RootLayout({
         <div className="flex min-h-screen flex-col lg:flex-row">
           <Sidebar />
           <main id="main" className="min-w-0 flex-1">
+            {/* The provenance of every figure on every page, pinned where it
+                cannot be scrolled away from. A reader should never have to
+                remember whether the numbers in front of them are real. */}
+            <div className="flex justify-end border-b border-rule px-5 py-2 sm:px-8">
+              <p className="tnum font-mono text-[10.5px] tracking-wider text-ink-faint uppercase">
+                Batch {batch.meta.seed} · Synthetic · n={batch.meta.record_count} ·{" "}
+                {batch.meta.batch_reference_time.slice(0, 10)}
+              </p>
+            </div>
             {children}
           </main>
         </div>

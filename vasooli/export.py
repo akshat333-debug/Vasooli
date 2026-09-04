@@ -141,6 +141,11 @@ def build_payload(
             "subscription_id": r["subscription_id"],
             "event": r["event"],
             "verdict": r["verdict"],
+            # The payload is part of the hashed body, so the viewer cannot
+            # recompute the chain without it. Exporting it is what turns the
+            # audit trail from a claim the page makes into one the reader can
+            # check in their own browser.
+            "payload": json.loads(r["payload"]),
             "hash": r["hash"],
             "prev_hash": r["prev_hash"],
         }

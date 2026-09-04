@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import ChainVerifier from "@/components/ChainVerifier";
 import LedgerStream from "@/components/LedgerStream";
 import { batch } from "@/lib/data";
 
@@ -33,6 +34,8 @@ export default function LedgerPage() {
           claim a protection it does not have.
         </p>
       </header>
+      <ChainVerifier entries={ledger.entries} />
+
       <Suspense
         fallback={
           <p className="py-12 text-center text-[14px] text-ink-mute">

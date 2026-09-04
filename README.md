@@ -59,7 +59,7 @@ That reframing is the whole project. Not *retry harder*, but **allocate three at
 |---|---|
 | **Repo** | `github.com/akshat333-debug/Vasooli`, branch `main` |
 | **Engine** | Python 3.11+, 18 modules, ~4,710 lines |
-| **Interface** | Next.js 15 + TypeScript + Tailwind v4, ~2,220 lines, 4 pages |
+| **Interface** | Next.js 15 + TypeScript + Tailwind v4, ~3,000 lines, 5 pages |
 | **Tests** | **213**, hermetic: no network, no API keys, no gateway |
 | **Coverage** | **92%** on the engine (CI floor 90%) |
 | **Lint** | `ruff` clean; `tsc --noEmit` clean |
@@ -338,6 +338,7 @@ The engine emits an `expected_success` with every scheduled retry. Bucketed pred
 | File | Lines | Responsibility |
 |---|---:|---|
 | `app/page.tsx` | 248 | Batch page: hero, attempt ledger, three stat cards, the compliance finding, scenarios, exception list, provenance. |
+| `app/rulebook/page.tsx` | 300 | The seven stopping rules: legal or physical basis, plain-English condition, the condition again as code, what each stopped in this batch, and the measured cost of removing it. |
 | `app/records/page.tsx` | 32 | All 100 records, filterable and deep-linkable. |
 | `app/ledger/page.tsx` | 42 | The hash-chained audit trail. |
 | `app/method/page.tsx` | 281 | What is real, what is simulated, the AI-usage table, and every defect found. |
@@ -552,6 +553,14 @@ Same reason the policy comparison has **no "what if" slider**: each scenario is 
 | `/ledger` | The hash-chained audit trail with filters and chain verification status |
 | `/method` | What is real, what is simulated, the AI-usage table, and every defect found |
 
+### Verify the chain yourself
+
+The Audit trail page recomputes the whole HMAC-SHA256 chain **in the browser**, from the payloads in the exported JSON, using the published unkeyed constant from `ledger.py`. It is not reading a stored `verified: true` flag.
+
+Next to it is a **Tamper** control. It edits one verdict in memory, re-runs the recomputation, and shows the break appearing at that row — with every row after it now carrying a `prev_hash` that no longer matches. Undo restores it. A tamper-evident trail a reader can break on purpose is a demonstration; one they have to take on trust is a claim.
+
+`web/src/lib/verifyChain.ts` has to reproduce Python's `json.dumps(sort_keys=True, separators=(",", ":"))` byte for byte, including `ensure_ascii` — the verdicts are full of em dashes and rupee signs, and getting that wrong would report a break on an untouched chain. It was checked against all 453 rows of the real export before being wired up.
+
 ### Why it does not look like a finance dashboard
 
 The visual language was taken from a finance dashboard reference, then inverted where the framing conflicted. A dashboard's job is to make numbers look good: green badges, rising sparklines, an upsell card. This project's thesis is that 75 of 100 records were not recovered and the system that appears to win only wins by breaking a rule. A UI celebrating ₹58,875 with an up-arrow would actively contradict the README.
@@ -755,7 +764,7 @@ Everything in the original plan, plus everything found while building it. Full r
 | Learned retry timing (bandit) | Complete, **negative result**, not wired in |
 | Keyed audit chain, property tests, structured logging | Complete |
 | CI, 92% coverage with a 90% floor | Complete |
-| Web interface, 4 pages, WCAG AA, deep-linkable | Complete |
+| Web interface, 5 pages, WCAG AA, deep-linkable, prints to A4 | Complete |
 | Razorpay test-mode integration | Complete |
 
 ### Left

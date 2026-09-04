@@ -1,6 +1,8 @@
 import AttemptLedger from "@/components/AttemptLedger";
+import DecisionTrace from "@/components/DecisionTrace";
 import EscalationQueue from "@/components/EscalationQueue";
 import ExceptionList from "@/components/ExceptionList";
+import WhereItLost from "@/components/WhereItLost";
 import Scenarios from "@/components/Scenarios";
 import { batch, rupees } from "@/lib/data";
 
@@ -17,6 +19,18 @@ export default function BatchPage() {
   const sqPer = sq.adjusted_paise_per_attempt;
   const perAttemptGain = ((sqPer - blPer) / blPer) * 100;
   const attemptsSaved = bl.attempts_spent - sq.attempts_spent;
+  // The rule-6 record: above the RBI cap, refused by three independent layers,
+  // and the clearest single illustration of the whole mechanism. Falls back to
+  // the first refusal of any kind so this never renders empty on another batch.
+  const traced =
+    records.find((r) => r.rule_fired === 6) ??
+    records.find((r) => r.action !== "RETRY_SCHEDULED") ??
+    records[0];
+  const tracedHash =
+    ledger.entries.find(
+      (e) => e.subscription_id === traced.subscription_id && e.event === "decision",
+    )?.hash ?? null;
+
   const preserved = sq.outcomes
     .filter((o) => !o.recovered)
     .reduce((a, o) => a + o.attempts_preserved, 0);
@@ -143,6 +157,19 @@ export default function BatchPage() {
       </div>
 
       <div className="rise mb-8" style={{ animationDelay: "330ms" }}>
+        <WhereItLost
+          records={records}
+          deltaPaise={
+            sq.recovered_within_envelope_paise - bl.recovered_within_envelope_paise
+          }
+        />
+      </div>
+
+      <div className="rise mb-8" style={{ animationDelay: "360ms" }}>
+        <DecisionTrace record={traced} ledgerHash={tracedHash} />
+      </div>
+
+      <div className="rise mb-8" style={{ animationDelay: "390ms" }}>
         <ExceptionList
           records={records}
           escalationLabels={batch.escalation_labels}
@@ -150,7 +177,7 @@ export default function BatchPage() {
       </div>
 
       {/* ---- Provenance ---- */}
-      <section className="rise grid gap-4 md:grid-cols-2" style={{ animationDelay: "360ms" }}>
+      <section className="rise grid gap-4 md:grid-cols-2" style={{ animationDelay: "420ms" }}>
         <div className="rounded-2xl border border-rule bg-paper-raised p-6">
           <p className="eyebrow mb-3">Audit trail</p>
           <div className="flex items-baseline gap-2.5">
