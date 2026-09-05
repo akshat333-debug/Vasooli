@@ -201,7 +201,19 @@ def sensitivity(
     seeds: list[int],
     n: int = 100,
 ) -> list[dict[str, Any]]:
-    """Re-run the sweep with one assumption overridden, across several values."""
+    """Re-run the sweep with one assumption overridden, across several values.
+
+    `constant` is checked against TUNABLE rather than passed straight to
+    setattr. Without the check a typo silently creates a NEW attribute on
+    sim.model, the sweep runs against completely unchanged assumptions, and the
+    result reads as "this constant does not matter" — the most misleading
+    possible outcome for a sensitivity analysis.
+    """
+    if constant not in TUNABLE:
+        raise ValueError(
+            f"{constant!r} is not a tunable assumption. Expected one of: "
+            f"{', '.join(TUNABLE)}"
+        )
     model = sim.model
     original = getattr(model, constant)
     out: list[dict[str, Any]] = []

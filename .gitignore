@@ -1,19 +1,37 @@
+# Secrets. Never commit a real key.
 .env
 .env.*
 !.env.example
-__pycache__/
-*.db
-node_modules/
-.next/
-.venv/
 *key*.csv
 *secret*
-.DS_Store
+
+# Python
+__pycache__/
+.venv/
+.coverage
+htmlcov/
 .pytest_cache/
+.ruff_cache/
+.hypothesis/
+
+# Engine output. Every .db here is a regenerable ledger, not source:
+# `vasooli run` rebuilds one from the seeded batch in a few seconds.
+*.db
+
+# Web
+node_modules/
 web/node_modules/
+.next/
 web/.next/
 web/out/
 web/tsconfig.tsbuildinfo
 web/next-env.d.ts
-.coverage
-htmlcov/
+web/.playwright-cli/
+
+# Tooling caches. These drop their own .gitignore inside themselves, which
+# works until a tool stops doing it — listed here so the repo does not depend
+# on that.
+.code-review-graph/
+
+# OS
+.DS_Store

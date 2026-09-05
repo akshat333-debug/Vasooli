@@ -2,6 +2,8 @@
 name = "vasooli"
 version = "0.1.0"
 description = "Bounded subscription-recovery sequencer. Treats mandate retries as a regulated, three-attempt budget."
+readme = "README.md"
+license = "MIT"
 requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2.9",

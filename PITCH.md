@@ -93,7 +93,7 @@ rm -f vasooli.db && uv run vasooli seed && uv run vasooli run && uv run vasooli 
 
 ## 3:15–4:25 — What broke
 
-> Twenty-two logged defects. I'll give you three.
+> Twenty-seven logged defects. I'll give you three.
 >
 > **My own circuit breaker was silently doing nothing.** RunFuse prices runs from a model-pricing table. My gateway reported a model that wasn't in it, so it logged "counting cost as $0" and the cost limit could never trip. A limit that looks like protection while accounting zero — exactly the failure mode I wrote RunFuse to catch, and I walked into it with my own library. The env template now points at a priced model, which makes the limit real instead of decorative.
 >
@@ -101,7 +101,7 @@ rm -f vasooli.db && uv run vasooli seed && uv run vasooli run && uv run vasooli 
 >
 > **And the one I couldn't have found myself.** My late-revocation hazard called the same pure hash function on both code paths, gated by `if arm == "sequencer"` and `if arm == "baseline"`. So it wasn't a fact both arms faced, it was a rule that favoured mine. It's now a function of the record that takes no arm argument at all — and there's a test that parses the AST of the attempt function and fails if the word "arm" ever reappears in it.
 >
-> The pattern across all twenty-two: nearly every one *looked* like it was working. Several were guardrails that were themselves the hazard. And the five that mattered most came from someone else reading my code — because the thing you're least able to audit is the mechanism your own claim depends on.
+> The pattern across all twenty-seven: nearly every one *looked* like it was working. Several were guardrails that were themselves the hazard. And the five that mattered most came from someone else reading my code — because the thing you're least able to audit is the mechanism your own claim depends on.
 
 ## 4:25–4:45 — Close
 

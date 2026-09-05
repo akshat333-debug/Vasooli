@@ -1,6 +1,17 @@
-# Vasooli — project.md
+# Requirements (historical)
 
-> Requirements source of truth. Drafted before any code. Phase 0 of start-workflow.
+> **This is the pre-build requirements document, kept unedited.** It was written
+> before any code existed and is preserved as a record of what was planned versus
+> what was actually built — including where the two diverged.
+>
+> It is **not** a description of the current system and its figures are not
+> current. For what exists today, read [`../README.md`](../README.md); for the
+> architecture as built, [`ARCHITECTURE.md`](ARCHITECTURE.md).
+>
+> Notable divergences, since they are the interesting part: this planned "~40
+> focused tests" and the build has 227; it planned a 3-day schedule that mostly
+> held; and it did not anticipate the twenty-seven defects logged in README §16,
+> five of which came from an external review and changed reported numbers.
 
 ## One-liner
 

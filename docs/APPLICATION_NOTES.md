@@ -27,7 +27,7 @@ one lives here:
 | Pinned dependency versions | `requirements.txt` (Python, generated from `uv.lock`), `web/package-lock.json` (JS) |
 | `.env.example`, no real keys | `.env.example` |
 | Organised source, not one file | `vasooli/` (18 modules), `web/src/` |
-| Tests | `tests/` — 227 tests, 92% coverage |
+| Tests | `tests/` — 229 tests, 92% coverage |
 | Sample/synthetic data | `data/` |
 | Architecture notes | `docs/ARCHITECTURE.md` |
 | Live, runnable demo | <https://akshat333-debug.github.io/Vasooli/> |

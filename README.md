@@ -611,7 +611,7 @@ Architecture notes live in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Sampl
 | `uv run vasooli verify-ledger` | Recompute the audit hash chain |
 
 ```bash
-uv run pytest          # 227 tests, hermetic
+uv run pytest          # 229 tests, hermetic
 cd web && npm install && npm run dev
 ```
 
@@ -631,17 +631,17 @@ cd web && npm install && npm run dev
 
 ## 15. Test inventory
 
-**227 tests, hermetic.** No network, no API key, no gateway. CI is given no credentials on purpose, so a test that starts needing one fails there rather than in front of a reader.
+**229 tests, hermetic.** No network, no API key, no gateway. CI is given no credentials on purpose, so a test that starts needing one fails there rather than in front of a reader.
 
 | File | Tests | Covers |
 |---|---:|---|
 | `test_audit_regressions.py` | 45 | One per defect found in the audits; each fails if the fix is reverted |
 | `test_webhook.py` | 15 | Signature, replays, conservative defaults, UTC timestamps |
-| `test_decide.py` | 14 | Every stopping rule, rule ordering, the legal floor, timing |
-| `test_experiments.py` | 14 | Sweep, attribution, ablation, calibration, assumption restoration |
-| `test_nudge.py` | 13 | Every guardrail on customer-facing text; absence of a send path |
+| `test_decide.py` | 19 | Every stopping rule, rule ordering, the legal floor, timing |
+| `test_experiments.py` | 17 | Sweep, attribution, ablation, calibration, assumption restoration |
+| `test_nudge.py` | 19 | Every guardrail on customer-facing text; absence of a send path |
 | `test_execute.py` | 11 | Shared draws, physical constraints, budget, ledger integrity |
-| `test_promise.py` | 11 | A promise may only move a retry later; trust decay |
+| `test_promise.py` | 12 | A promise may only move a retry later; trust decay |
 | `test_properties.py` | 11 | Hypothesis, 300 generated examples each, 11 safety invariants |
 | `test_logging.py` | 11 | Silent by default, JSON structure, timing survives exceptions |
 | `test_ledger.py` | 10 | Hash chain, tamper detection, keyed vs unkeyed |
@@ -650,8 +650,8 @@ cd web && npm install && npm run dev
 | `test_policy.py` | 7 | Breaker limits, soft warnings, non-positive amounts |
 | `test_seed.py` | 6 | Determinism, all three hazards present |
 | `test_sim_model.py` | 6 | Terminal classes hard zero, curve shapes |
-| `test_taxonomy.py` | 6 | `UNKNOWN` is never guessed past |
-| `test_cli_commands.py` | 9 | The webhook and promise commands actually demonstrate what they claim |
+| `test_taxonomy.py` | 9 | `UNKNOWN` is never guessed past |
+| `test_cli_commands.py` | 9 | `webhook`, `promise`, `explain` and `worklist` actually demonstrate what they claim |
 | `test_diagnose.py` | 5 | Degrades to human review, never to a guess |
 
 The property tests are worth singling out: Hypothesis generates adversarial records (expired mandates, zero budgets, amounts a rupee either side of a cap) and asserts that the engine never schedules past expiry, never precedes the notice floor, never auto-actions above the RBI cap, never touches a dead mandate, and always carries a verdict and a rule. They check the cases I did not think of.
@@ -756,7 +756,7 @@ That is what the audit trail, the arm comparison, and a deliberate adversarial a
 
 ### Done
 
-Everything in the original plan, plus everything found while building it. Full record with per-item outcomes in [`NEXT_STEPS.md`](NEXT_STEPS.md).
+Everything in the original plan, plus everything found while building it. The plan as written before any code is preserved unedited in [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.md), so plan and outcome can be compared directly.
 
 | Area | State |
 |---|---|
@@ -771,10 +771,9 @@ Everything in the original plan, plus everything found while building it. Full r
 | CI, 92% coverage with a 90% floor | Complete |
 | Web interface, 5 pages, WCAG AA, deep-linkable, prints to A4 | Complete |
 | Razorpay test-mode integration | Complete |
+| Deployed and publicly reachable | [Live](https://akshat333-debug.github.io/Vasooli/) |
 
 ### Left
-
-**Deploying the site.** Both paths are configured and verified: `.github/workflows/pages.yml` is committed and inert until Pages is enabled in repo settings, and Vercel needs only `web/` as its root. Not done because publishing is outward-facing and changes settings on an account.
 
 **Genuinely open, in order of value:**
 
@@ -802,7 +801,7 @@ Nothing here needs credentials. Every claim in this README is checkable from a c
 git clone https://github.com/akshat333-debug/Vasooli && cd Vasooli
 uv venv && uv pip install -e ".[dev]"
 
-uv run pytest                    # 227 tests pass with no network
+uv run pytest                    # 229 tests pass with no network
 uv run vasooli run               # reproduces the headline table
 uv run vasooli experiments       # reproduces the sweep and attribution
 uv run vasooli bandit            # reproduces the negative ML result
@@ -841,16 +840,21 @@ vasooli/
 ├── webhook.py           Razorpay ingestion; verifies, dedupes, decides nothing
 ├── razorpay_adapter.py  test-mode only; capability-probed
 ├── logging.py           operational JSON; silent unless VASOOLI_LOG is set
-├── cli.py               ten commands
+├── cli.py               fourteen commands
 └── sim/
     ├── model.py         the assumptions, as named constants
     └── seed.py          seeded batch with three hazards built in
 
-web/                     Next.js 15 viewer, static export
-tests/                   227 tests across 18 files
+web/                     Next.js 15 viewer, static export, 5 pages
+tests/                   229 tests across 18 files
+data/                    sample synthetic batch + escalation worklist (seed 42)
+docs/
+├── ARCHITECTURE.md      the pipeline, the design decisions, the module map
+├── REQUIREMENTS.md      the pre-build plan, unedited, for plan-vs-built
+└── APPLICATION_NOTES.md submission checklist + Razorpay's scam warning
 BATCH_REPORT.txt         the measured result, regenerate with `vasooli run`
 EXPERIMENTS.txt          the six checks, regenerate with `vasooli experiments --seeds 40`
-NEXT_STEPS.md            per-item record of what each upgrade was worth
+requirements.txt         pinned versions for pip; uv reads uv.lock instead
 ```
 
 Prior work this builds on: [RunFuse](https://github.com/akshat333-debug/RunFuse) (bounded execution, imported here as a real dependency), [QuantProto](https://github.com/akshat333-debug/QuantProto) (hash-chained ledger; fail loudly rather than silently substitute), [AutoWatch](https://github.com/akshat333-debug/AutoWatch) (rules-first detection, model second; verify-persist-acknowledge-then-work).

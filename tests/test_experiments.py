@@ -9,11 +9,13 @@ import pytest
 from vasooli.execute import _draw
 from vasooli.experiments import (
     RULE_NAMES,
+    TUNABLE,
     ablate,
     calibration,
     decompose,
     find_breaking_point,
     run_one,
+    sensitivity,
     sweep,
 )
 
@@ -87,6 +89,28 @@ def test_breaking_point_restores_the_constants_it_mutates():
     assert (model.IF_BEFORE_REPLENISH, model.IF_AFTER_REPLENISH) == before, (
         "a sensitivity sweep leaked a mutated assumption into the live model"
     )
+
+
+def test_sensitivity_refuses_an_assumption_it_does_not_know():
+    # A typo'd constant name used to sail through to setattr, which creates a
+    # NEW attribute on sim.model rather than overriding one. The sweep then ran
+    # against completely unchanged assumptions and reported a flat line -- i.e.
+    # "this assumption does not matter", the most misleading result a
+    # sensitivity analysis can produce.
+    from vasooli.sim import model
+
+    with pytest.raises(ValueError, match="not a tunable assumption"):
+        sensitivity("IF_AFTER_REPLENSIH", [0.5], [1], n=20)  # transposed letters
+    assert not hasattr(model, "IF_AFTER_REPLENSIH"), (
+        "the bad name was written onto the model instead of being refused"
+    )
+
+
+def test_every_tunable_name_actually_exists_on_the_model():
+    from vasooli.sim import model
+
+    for name in TUNABLE:
+        assert hasattr(model, name), f"TUNABLE lists {name}, which sim.model lacks"
 
 
 def test_breaking_point_narrows_the_gap_monotonically():
