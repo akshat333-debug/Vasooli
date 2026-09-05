@@ -58,8 +58,8 @@ the output before moving to the next.
 **`uv run vasooli experiments --seeds 40`**
 
 > Not one lucky seed — 40 independent runs. On efficiency it wins 40 of 40.
-> On raw rupees collected it wins 26, and loses 13, which I'd rather say than
-> have you find. Then I tried to break my own thesis: closed the payday-timing
+> On raw rupees collected, budget ignored, it wins 25 and loses 14 — the tool
+> prints that itself, because you'd find it anyway. Then I tried to break my own thesis: closed the payday-timing
 > gap to zero and the advantage barely moved. So I decomposed it — refusing
 > doomed attempts is 82% of the gain, timing is 18%. The most elaborate part
 > of this engine is the smaller half.

@@ -190,6 +190,8 @@ Across **40 independent seeds**, the sequencer led on recovery-per-attempt in **
 
 **On gross recovery, unadjusted, the answer is identical: 40 of 40, median +114.3%.** A reviewer can fairly object that dividing *within-envelope* recovery by attempts scores the arm that declines 42% of the batch value on the remaining 58%. So the gross figure is published beside it — and since the AFA fix the two bases coincide exactly, because neither arm recovers anything above the cap. The adjustment is doing no work at all, which is a better answer than a defence of it.
 
+**And the crude question, since a reader is entitled to ask it: which arm simply collected more money, budget ignored?** The sequencer, in **25 of 40 seeds** — one tied, fourteen lost, median **+₹1,047**, worst seed **−₹12,695**. That is the weakest number in this project and `vasooli experiments` prints it unprompted, beneath the rates, for exactly that reason. Every other figure here is rupees *per attempt*, which is the metric this project argues for: the budget is three deep and does not refill, so an arm that collects the same money on half of it starts the next cycle with something left. Judge the claim on the rate. The total is published so that the choice of metric is visible rather than convenient.
+
 ### 5.1b The result does not rest on the late-revocation hazard
 
 The sequencer makes a pre-flight mandate status call and preserves attempts on mandates that died between the decision and the debit. Is the headline just that hazard? Re-run the whole attribution with `LATE_REVOCATION_RATE = 0`:

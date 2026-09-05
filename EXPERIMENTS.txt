@@ -21,6 +21,17 @@ VASOOLI - EXPERIMENTS
   recovered by either arm - the network declines it. The adjustment is
   no longer doing any work, which is a better answer than defending it.
 
+  1c. TOTAL RUPEES COLLECTED - budget ignored, the crude question
+  sequencer collected more money outright in 25/40 seeds (1 tied, 14 lost)
+  median delta  Rs 1,047.00   worst seed  Rs -12,695.00
+  Stated plainly because it is the weakest number here and a reader
+  would find it anyway. Everything above is rupees PER ATTEMPT, and
+  that is the metric this project argues for: the retry budget is the
+  scarce resource, three deep and non-refilling, so an arm that
+  collects the same money on half the budget has more left for next
+  cycle. Judge that claim on the rate. The total is offered so the
+  choice of metric is visible rather than convenient.
+
 ----------------------------------------------------------------------------
 2. ATTRIBUTION - is the advantage timing, or refusal?
 ----------------------------------------------------------------------------

@@ -71,9 +71,13 @@ def pushed_to_halt(result: BatchResult, records: list[AtRiskRecord]) -> list[Rec
 
     A record counts when the mandate was live, the class was recoverable, the
     amount sat inside both caps, attempts were actually spent, and none landed.
-    Razorpay halts a subscription once its budget is gone, and a halted
-    subscription is a customer lost — so this is the rupee meaning of
-    "attempts preserved", which is otherwise an abstraction.
+    Razorpay halts a subscription once its budget is gone. Halted is NOT a lost
+    customer -- Razorpay returns one to `active` when the customer updates the
+    card themselves -- but it is a lost *automation*: the subscription stops
+    charging, the invoices it accrues meanwhile are created and never charged,
+    and recovery now depends on a disengaged person choosing to act. So this is
+    the rupee meaning of "attempts preserved", which is otherwise an
+    abstraction, and it is deliberately the smaller of the two available claims.
     """
     by = {r.subscription_id: r for r in records}
     out = []
@@ -160,12 +164,16 @@ def render(
         f"{len(s_halt) - len(b_halt):>16}")
     add(f"  {'  their monthly value':22}{_rs(b_hv):>16}{_rs(s_hv):>16}{_rs(s_hv - b_hv):>16}")
     add("")
-    add("  Headline metric is recovery per attempt, because the retry budget is")
-    add("  the scarce resource - three attempts, then the subscription halts.")
-    add("  'Recoverable halted' is what that costs in customers: a live mandate,")
-    add("  a recoverable failure, an amount inside both caps, and every attempt")
-    add("  burned anyway. Each one is a subscription Razorpay marks halted. The")
-    add("  sequencer's preserved attempts are what keep these alive next cycle.")
+    add("  Recovery per attempt is the efficiency statistic, because the retry")
+    add("  budget is the scarce resource - three attempts, then the subscription")
+    add("  halts. 'Recoverable halted' is what that costs: a live mandate, a")
+    add("  recoverable failure, an amount inside both caps, and every attempt")
+    add("  burned anyway. Halted is recoverable - the customer can update the")
+    add("  card and Razorpay reactivates it - but it stops charging on its own,")
+    add("  its accrued invoices are never auto-charged, and getting it back")
+    add("  depends on a disengaged person acting. That is the claim: not revenue")
+    add("  destroyed, revenue moved off autopilot. It is the smaller claim and")
+    add("  the one the documentation supports.")
     add("")
 
     add("-" * 78)

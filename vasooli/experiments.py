@@ -169,6 +169,26 @@ class SweepResult:
             "gross_median_delta_pct": (statistics.median(self.gross_deltas)
                                        if self.results else 0.0),
             "gross_losing_seeds": [r.seed for r in self.results if not r.gross_won],
+            # Every figure above is a RATE - rupees per attempt. A reader is
+            # entitled to ask the cruder question: which arm simply collected
+            # more money, budget ignored? The sequencer does not win that one
+            # 40/40, and reporting only the rate would let a reviewer discover
+            # it and conclude the ratio was hiding something. It is not: the
+            # budget is the scarce resource and the rate is the right metric.
+            # But the crude number is published beside it so nobody has to
+            # find it themselves.
+            "total_rupee_wins": sum(
+                1 for r in self.results
+                if r.sequencer.gross_paise > r.baseline.gross_paise),
+            "total_rupee_ties": sum(
+                1 for r in self.results
+                if r.sequencer.gross_paise == r.baseline.gross_paise),
+            "total_rupee_median_delta_paise": (
+                statistics.median(r.sequencer.gross_paise - r.baseline.gross_paise
+                                  for r in self.results) if self.results else 0),
+            "total_rupee_worst_delta_paise": (
+                min(r.sequencer.gross_paise - r.baseline.gross_paise
+                    for r in self.results) if self.results else 0),
         }
 
 

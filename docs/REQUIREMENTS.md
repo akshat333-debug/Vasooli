@@ -9,9 +9,20 @@
 > architecture as built, [`ARCHITECTURE.md`](ARCHITECTURE.md).
 >
 > Notable divergences, since they are the interesting part: this planned "~40
-> focused tests" and the build has 227; it planned a 3-day schedule that mostly
+> focused tests" and the build has 229; it planned a 3-day schedule that mostly
 > held; and it did not anticipate the twenty-seven defects logged in README §16,
 > five of which came from an external review and changed reported numbers.
+>
+> **One factual error below, left in place deliberately.** The problem statement
+> says a halted subscription means "the customer is gone." That is wrong, and it
+> stayed wrong in the shipped README until an external review challenged it on
+> 5 Sep 2026. Razorpay documents that a halted subscription returns to `active`
+> once the customer updates the card details; what does not return is the
+> automation, since the invoices accrued while halted are never auto-charged.
+> The corrected framing is in [`../README.md`](../README.md) §1. It is preserved
+> here because a premise that survived from the planning document all the way
+> into a public README is exactly the kind of divergence this file exists to
+> record.
 
 ## One-liner
 

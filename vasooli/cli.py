@@ -33,7 +33,7 @@ from .models import MAX_RETRY_BUDGET, RBI_STANDARD_CAP_PAISE, MandateStatus
 from .nudge import draft_batch, wants_nudge_count
 from .policy import RecoveryPolicy
 from .razorpay_adapter import run_live_probe
-from .report import ESCALATION_LABEL, render
+from .report import ESCALATION_LABEL, _rs, render
 from .sim.seed import BATCH_NOW, generate_batch
 from .taxonomy import FailureClass, classify_by_code
 
@@ -222,6 +222,21 @@ def _cmd_experiments(args: argparse.Namespace) -> int:
     add("  The two bases now agree, because nothing above the RBI cap is")
     add("  recovered by either arm - the network declines it. The adjustment is")
     add("  no longer doing any work, which is a better answer than defending it.")
+    add("")
+    # Every number above is a rate. Publish the crude one too, unprompted.
+    tw, tt = sw["total_rupee_wins"], sw["total_rupee_ties"]
+    add("  1c. TOTAL RUPEES COLLECTED - budget ignored, the crude question")
+    add(f"  sequencer collected more money outright in {tw}/{sw['seeds']} seeds "
+        f"({tt} tied, {sw['seeds'] - tw - tt} lost)")
+    add(f"  median delta  {_rs(sw['total_rupee_median_delta_paise'])}   "
+        f"worst seed  {_rs(sw['total_rupee_worst_delta_paise'])}")
+    add("  Stated plainly because it is the weakest number here and a reader")
+    add("  would find it anyway. Everything above is rupees PER ATTEMPT, and")
+    add("  that is the metric this project argues for: the retry budget is the")
+    add("  scarce resource, three deep and non-refilling, so an arm that")
+    add("  collects the same money on half the budget has more left for next")
+    add("  cycle. Judge that claim on the rate. The total is offered so the")
+    add("  choice of metric is visible rather than convenient.")
     add("")
 
     add("-" * 76)
