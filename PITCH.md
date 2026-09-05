@@ -3,6 +3,16 @@
 Four segments: terminal, browser, code, close. Record terminal + browser,
 voiceover over both. Unlisted YouTube.
 
+> **If you are recording from a generated voice track, this is not the file you
+> feed the generator.** Use [`docs/VOICEOVER.txt`](docs/VOICEOVER.txt) — same
+> script, but with the markdown stripped and every number written the way it
+> should be read aloud, split into four blocks to generate separately. The
+> step-by-step recording and assembly procedure is in
+> [`docs/DEMO_RUNBOOK.md`](docs/DEMO_RUNBOOK.md).
+>
+> This file stays as the working script: what is on screen at each beat, and
+> why. If the two ever disagree, `VOICEOVER.txt` is what gets spoken.
+
 Live site: https://akshat333-debug.github.io/Vasooli/
 
 Run once before recording so output is fresh, then run each command live during
@@ -14,7 +24,7 @@ rm -f vasooli.db && uv run vasooli seed && uv run vasooli run && uv run vasooli 
 
 ---
 
-## Segment 1 — Terminal (0:00–2:00)
+## Segment 1 — Terminal (0:00–2:45)
 
 Fresh terminal, project root. Run each command, let it finish, narrate over
 the output before moving to the next.
@@ -75,7 +85,7 @@ the output before moving to the next.
 > it stops there. Activation needs the customer to authenticate the mandate,
 > and a batch job deliberately doesn't do that on their behalf.
 
-## Segment 2 — Browser (2:00–3:30)
+## Segment 2 — Browser (2:45–3:45)
 
 Open https://akshat333-debug.github.io/Vasooli/.
 
@@ -107,7 +117,7 @@ break, then restore it.
 > Same trace the terminal just printed — every rule, the one that fired,
 > where it escalates to.
 
-## Segment 3 — Code (3:30–4:00)
+## Segment 3 — Code (3:45–4:05)
 
 Open `vasooli/decide.py`, scroll to the top.
 
@@ -116,7 +126,7 @@ Open `vasooli/decide.py`, scroll to the top.
 > a deterministic scheduler decide whether to move money. A model reads what
 > the bank wrote; it never decides whether to debit anyone.
 
-## Segment 4 — Close (4:00–4:45)
+## Segment 4 — Close (4:05–4:50)
 
 Back in terminal:
 
@@ -152,11 +162,12 @@ Stop recording once "229 passed" is on screen and the last line is spoken.
   point — say it as defence in depth and show the refusals column moving.
 - Segment timings are a guide, not a hard cut. Terminal segment is the most
   important 2 minutes — a system visibly running beats slides every time.
-- **Word budget.** The blockquoted narration is ~660 words, about 4.5 minutes
-  at 145 wpm. That only fits a 5-minute video if you narrate *over* command
-  execution rather than waiting for each to finish in silence. Time a dry run;
-  if you land over 5:00, cut the browser segment's Records beat and the
-  `demo-trip` line first — both are visible without narration.
+- **Word budget.** The spoken script is 748 words — **4:50 at 155 wpm**, which
+  fits the five-minute limit with about ten seconds of headroom. That assumes
+  you narrate *over* command execution rather than waiting for each to finish
+  in silence. If your read runs slower, cut the ablation sentence in Segment 1
+  and the Rulebook beat in Segment 2 — both are legible on screen unnarrated.
+  Do not cut the calibration or total-rupees lines; those are the honesty beats.
 - Two claims to keep exactly as written, because both were wrong in an earlier
   draft and a Razorpay engineer will know: `halted` **is** reversible (customer
   updates the card), and T+1/T+3/T+5 is **not** Razorpay's native schedule

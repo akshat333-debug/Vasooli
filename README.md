@@ -874,7 +874,9 @@ data/                    sample synthetic batch + escalation worklist (seed 42)
 docs/
 ├── ARCHITECTURE.md      the pipeline, the design decisions, the module map
 ├── REQUIREMENTS.md      the pre-build plan, unedited, for plan-vs-built
-└── APPLICATION_NOTES.md submission checklist + Razorpay's scam warning
+├── APPLICATION_NOTES.md submission checklist, panel answers, scam warning
+├── DEMO_RUNBOOK.md      how the video was recorded, step by step
+└── VOICEOVER.txt        the narration, plain text, ready for a voice generator
 BATCH_REPORT.txt         the measured result, regenerate with `vasooli run`
 EXPERIMENTS.txt          the six checks, regenerate with `vasooli experiments --seeds 40`
 requirements.txt         pinned versions for pip; uv reads uv.lock instead

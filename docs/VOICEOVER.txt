@@ -1,0 +1,144 @@
+VASOOLI - VOICEOVER SCRIPT FOR TEXT-TO-SPEECH
+=============================================
+
+Generate FOUR separate audio files, one per segment. Paste only the text
+between the "BEGIN" and "END" markers. Do not paste the headers, the notes,
+or these instructions - they are not spoken.
+
+Numbers are already written the way they should be read aloud. Do not
+"correct" them back into digits or symbols; a rupee sign or a slash will be
+read wrong by most generators.
+
+Recommended settings: measured, even-paced voice. Speed zero point nine five
+to one point zero. Nothing enthusiastic - the argument here works because the
+numbers are unflattering, and an excited read fights it.
+
+Target: about four minutes forty seconds total.
+
+
+=============================================
+SEGMENT 1 - TERMINAL  (target about 2:00)
+=============================================
+Visual: six commands run live in the terminal.
+
+--- BEGIN SEGMENT 1 ---
+
+A recurring debit fails on Razorpay. It auto-retries three times, and then the
+subscription halts. It stops charging itself, and it comes back only if the
+customer goes and updates their card.
+
+One hundred synthetic at-risk subscriptions, seeded and reproducible. Dead
+mandates, exhausted budgets, amounts above the R B I cap. Hard cases on
+purpose.
+
+Two arms over the identical batch, same random draws. The baseline is the
+fixed schedule dunning tools ship. Vasooli diagnoses the failure first, then
+decides.
+
+Look at the top row, and notice that it is boring. About fifty-seven and a
+half thousand rupees against about fifty-nine thousand. Both arms recover
+roughly the same money this cycle. If that were my claim, I would not have a
+project.
+
+Here is the claim. The baseline spent one hundred and sixty attempts to get
+that. Vasooli spent seventy-seven. The budget is three deep and it does not
+refill, so what those extra eighty-three attempts bought the baseline is five
+more halted subscriptions. Twenty-seven, against twenty-two.
+
+Halted is not deleted. But it stops charging automatically, the invoices it
+accrues are never charged on their own, and getting it back depends on a
+disengaged person choosing to act. That is thirteen thousand rupees a month
+moved off autopilot. Ten times the one-cycle difference, in month one, and it
+recurs. A dunning dashboard reports the top row. The top row is the wrong row.
+
+The full rule trace for one record. All seven stopping rules, in order, with
+why each passed or fired. Run it again and it is identical, which is what
+having no model in the decision path buys you.
+
+Then, forty independent seeds. On rupees per attempt it wins forty out of
+forty. On raw rupees collected, budget ignored, it wins twenty-five and loses
+fourteen. The tool prints that itself, because you would find it anyway.
+
+It prints this too. The scheduler is over-confident by fourteen points in its
+top confidence bucket. It is most wrong exactly where it is most sure, which
+is the worst place to be wrong.
+
+Then I tried to break my own thesis, and decomposed the gain. Refusing doomed
+attempts is eighty-two per cent of it. Timing is eighteen. The most elaborate
+part of this engine is the smaller half.
+
+This is the money-side circuit breaker tripping, on camera.
+
+And this is a real Razorpay test-mode API call. An actual subscription, not a
+mock. It stops right there, because activation needs the customer to
+authenticate the mandate, and a batch job should not do that on their behalf.
+
+--- END SEGMENT 1 ---
+
+
+=============================================
+SEGMENT 2 - BROWSER  (target about 1:30)
+=============================================
+Visual: the deployed site. Home, escalation queue, Rulebook, Ledger tamper
+demo, Records.
+
+--- BEGIN SEGMENT 2 ---
+
+Every one of the three hundred retries this batch was allowed to spend, one
+square per attempt. The baseline fills what is left. Vasooli leaves most of it
+unspent.
+
+Refusing to debit is only half an answer, because the rupee is still owed. So
+every record the engine declines carries a route, as structured data on the
+decision. Seventy-three thousand rupees goes to a customer-present payment
+link with additional factor authentication, because the answer to "above the
+cap" is not "give up". The baseline produces zero escalations.
+
+All seven stopping rules, each with the legal basis it rests on and how many
+subscriptions it stopped in this batch.
+
+And every decision is hash-chained before it is acted on. That is not a claim
+you have to take on trust. Tamper with a row yourself, and watch the verifier
+locate exactly where the chain breaks.
+
+--- END SEGMENT 2 ---
+
+
+=============================================
+SEGMENT 3 - CODE  (target about 0:25)
+=============================================
+Visual: the decide module open in the editor, scrolled to the top. Do not
+scroll during this segment.
+
+--- BEGIN SEGMENT 3 ---
+
+Diagnosis uses a language model to read free-text bank errors, which is a
+genuine language problem. But no model runs in this file. Seven stopping rules
+and a deterministic scheduler decide whether to move money. A model reads what
+the bank wrote. It never decides whether to debit anyone.
+
+--- END SEGMENT 3 ---
+
+
+=============================================
+SEGMENT 4 - CLOSE  (target about 0:45)
+=============================================
+Visual: pytest running in the terminal, ending on "229 passed".
+
+--- BEGIN SEGMENT 4 ---
+
+Two hundred and twenty-nine tests, hermetic. No network, no A P I key.
+Ninety-two per cent coverage.
+
+Twenty-seven logged defects, five found by an external reviewer who caught
+what I could not see in my own code. The most recent: I had been calling a
+halted subscription permanent, and it is not. Razorpay documents the way back.
+Correcting it made the claim smaller and made it true, and I would rather hand
+you the smaller claim.
+
+Retries are a budget of three. Vasooli spends them on the failures that can
+actually be recovered, refuses the ones that cannot, loudly and on the record,
+and gives every rupee it refuses somewhere to go. Same money this cycle, half
+the budget, and thirteen thousand rupees a month still collecting on its own.
+
+--- END SEGMENT 4 ---
