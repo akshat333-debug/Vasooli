@@ -31,9 +31,20 @@ the output before moving to the next.
 
 > Two arms over the identical batch, same random draws. Baseline: fixed
 > T+1/T+3/T+5 schedule. Vasooli: diagnoses the failure first, then decides.
-> Baseline spends 160 attempts. Vasooli spends 77 and recovers more —
-> ₹765 per attempt against ₹360. That's 112% better on the metric that
-> matters, because the attempt is the scarce resource, not the rupee.
+>
+> Now look at the top row and notice it's boring — ₹57,571 against ₹58,875.
+> Both arms recover about the same money this cycle. If that were my claim
+> I wouldn't have a project.
+>
+> Here's the claim. The baseline spent **160 attempts** to get that. Vasooli
+> spent **77**. And Razorpay's retry budget is three deep and terminal —
+> spend the third and the subscription is halted, permanently. So what those
+> extra 83 attempts actually bought the baseline is **five dead
+> subscriptions**: twenty-seven recoverable ones killed against twenty-two.
+>
+> That's **₹13,195 a month of recurring revenue** — ten times the one-cycle
+> difference, in the first month alone, and it compounds. A dunning
+> dashboard reports the top row. The top row is the wrong row.
 
 **`uv run vasooli explain sub_SYN0056`**
 
@@ -125,7 +136,8 @@ Let it print, then:
 >
 > Retries are a budget of three. Vasooli spends them on the failures that can
 > actually be recovered, refuses the ones that can't — loudly, on the record
-> — and gives every rupee it refuses somewhere to go.
+> — and gives every rupee it refuses somewhere to go. Same money this cycle,
+> half the budget, and ₹13,195 a month of recurring revenue still alive.
 
 Stop recording once "229 passed" is on screen and the last line is spoken.
 

@@ -286,13 +286,34 @@ def _cmd_experiments(args: argparse.Namespace) -> int:
     add("-" * 76)
     add("5. CALIBRATION - do the reported probabilities mean anything?")
     add("-" * 76)
-    add(f"  {'bucket':>10} {'n':>6} {'predicted':>11} {'observed':>10}")
-    for c in calibration(seeds, args.n):
-        add(f"  {c['bucket']:>10} {c['n']:>6} {c['predicted']:>11.3f} {c['observed']:>10.3f}")
+    add(f"  {'bucket':>10} {'n':>6} {'predicted':>11} {'observed':>10} {'gap':>8}")
+    cal = calibration(seeds, args.n)
+    for c in cal:
+        gap = c["observed"] - c["predicted"]
+        add(f"  {c['bucket']:>10} {c['n']:>6} {c['predicted']:>11.3f} "
+            f"{c['observed']:>10.3f} {gap:>+8.3f}")
     add("")
     add("  Internal consistency only: predictions and outcomes come from the same")
     add("  assumed model, so agreement shows the scheduler reads its own model")
     add("  correctly. It is not evidence about real banks.")
+
+    # Name the worst bucket rather than leaving a reader to find it. A
+    # calibration table printed without comment invites the reasonable
+    # suspicion that nobody read it.
+    worst = min(cal, key=lambda c: c["observed"] - c["predicted"])
+    gap = worst["observed"] - worst["predicted"]
+    if gap < -0.05:
+        add("")
+        add(f"  NOT WELL CALIBRATED AT THE TOP. The {worst['bucket']} bucket predicts "
+            f"{worst['predicted']:.3f}")
+        add(f"  and observes {worst['observed']:.3f}, over-confident by {abs(gap):.3f} "
+            f"across {worst['n']} attempts.")
+        add("  The scheduler is most wrong exactly where it is most sure, which is the")
+        add("  worst place to be wrong: those are the attempts it most wants to spend.")
+        add("  Cause is the per-attempt decay in sim/model.py compounding faster than")
+        add("  the scorer assumes when it reads the same curve back. It does not change")
+        add("  the arm comparison - both arms are scored by this identical model - but")
+        add("  a confidence this system reports should not be read as a probability.")
     add("")
 
     add("-" * 76)

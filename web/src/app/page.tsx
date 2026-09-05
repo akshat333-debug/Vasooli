@@ -4,7 +4,7 @@ import EscalationQueue from "@/components/EscalationQueue";
 import ExceptionList from "@/components/ExceptionList";
 import WhereItLost from "@/components/WhereItLost";
 import Scenarios from "@/components/Scenarios";
-import { batch, rupees } from "@/lib/data";
+import { batch, rupees, type Arm } from "@/lib/data";
 
 export default function BatchPage() {
   const { arms, records, meta, ledger } = batch;
@@ -18,6 +18,15 @@ export default function BatchPage() {
   const blPer = bl.adjusted_paise_per_attempt;
   const sqPer = sq.adjusted_paise_per_attempt;
   const perAttemptGain = ((sqPer - blPer) / blPer) * 100;
+  // The number this project is actually about. Both arms recover within 2.3%
+  // of each other THIS cycle; what separates them is how many recoverable
+  // subscriptions each one drove to `halted`, because a spent retry budget is
+  // permanent. Leading with recovery-per-attempt invited the fair objection
+  // that a ratio was doing the work.
+  const haltedValue = (a: Arm) =>
+    a.pushed_to_halt.reduce((t, o) => t + o.amount_paise, 0);
+  const recurringSaved = haltedValue(bl) - haltedValue(sq);
+  const subsSaved = bl.pushed_to_halt.length - sq.pushed_to_halt.length;
   const attemptsSaved = bl.attempts_spent - sq.attempts_spent;
   // The rule-6 record: above the RBI cap, refused by three independent layers,
   // and the clearest single illustration of the whole mechanism. Falls back to
@@ -54,6 +63,15 @@ export default function BatchPage() {
           fix, and spends what is left where it can actually land, inside the
           RBI e-mandate envelope, with every decision written to an audit trail.
         </p>
+        <p className="mt-4 max-w-2xl text-[15px] leading-relaxed sm:text-[16px]">
+          On this batch it recovers{" "}
+          <strong className="font-semibold">the same money</strong> as the fixed
+          schedule while spending{" "}
+          <strong className="font-semibold">half the retry budget</strong> — and
+          leaves {subsSaved} more subscriptions alive, worth{" "}
+          <strong className="font-semibold">{rupees(recurringSaved)} a month</strong>{" "}
+          of recurring revenue the baseline destroys.
+        </p>
       </header>
 
       {/* ---- Signature ---- */}
@@ -70,17 +88,17 @@ export default function BatchPage() {
       <section className="rise mb-8 grid gap-4 md:grid-cols-3" style={{ animationDelay: "120ms" }}>
         <Stat
           tone="sage"
-          label="Recovered per attempt"
-          value={rupees(Math.round(sqPer))}
-          delta={`+${perAttemptGain.toFixed(0)}% vs baseline`}
-          note={`Baseline ${rupees(Math.round(blPer))}, compliance-adjusted on both sides. The retry budget is the scarce resource, so this is the number that matters.`}
+          label="Recurring revenue kept alive"
+          value={`${rupees(recurringSaved)}/mo`}
+          delta={`${subsSaved} fewer subscriptions killed`}
+          note={`Recoverable subscriptions each arm drove to halted: baseline ${bl.pushed_to_halt.length}, here ${sq.pushed_to_halt.length}. A spent retry budget is permanent, so this repeats every month — against a one-cycle recovery difference of ${rupees(sq.recovered_within_envelope_paise - bl.recovered_within_envelope_paise)}.`}
         />
         <Stat
           tone="periwinkle"
           label="Attempts preserved"
           value={String(preserved)}
           delta={`${attemptsSaved} fewer spent than baseline`}
-          note="Retries the engine declined to spend on debits that could not have succeeded. Invisible in any report that only counts wins."
+          note={`Retries the engine declined to spend on debits that could not have succeeded. Worth ${rupees(Math.round(sqPer))} each here against the baseline's ${rupees(Math.round(blPer))} — ${perAttemptGain.toFixed(0)}% more per attempt — but the point is the budget they leave intact.`}
         />
         <Stat
           tone="mustard"

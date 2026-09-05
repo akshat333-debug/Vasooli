@@ -93,8 +93,17 @@ def test_signature_check_is_constant_time():
 
 
 def test_a_valid_signature_passes():
+    # verify_signature returns None and raises on failure, so "it passed" is
+    # the absence of an exception. Asserted explicitly rather than left to a
+    # bare call, because a test with no assertion in it is indistinguishable
+    # from a test someone forgot to finish.
     b = body_of(event())
-    verify_signature(b, sign(b), SECRET)
+    assert verify_signature(b, sign(b), SECRET) is None
+
+    # And the same body with one byte changed must not pass, so the test above
+    # cannot be satisfied by a function that accepts everything.
+    with pytest.raises(SignatureInvalid):
+        verify_signature(b + b" ", sign(b), SECRET)
 
 
 # --- replays -------------------------------------------------------------------

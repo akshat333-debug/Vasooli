@@ -2,6 +2,8 @@
 
 **Treats subscription retries as a regulated, three-attempt budget, and spends them only on the failures that can actually be recovered.**
 
+On a 100-subscription batch it recovers the same money as a fixed-schedule baseline using **half the retry budget**, and leaves **five fewer subscriptions dead** — **₹13,195/month of recurring revenue** the baseline destroys. ([How that is measured](#4-the-measured-result).)
+
 Razorpay AI Buildathon 2026 · Track 03, AI Revenue Recovery
 
 > *Vasooli* (वसूली) is Hindi for recovery or collection.
@@ -51,6 +53,8 @@ So a retry is an **irreversible, regulated, capped action drawn against a scarce
 
 That reframing is the whole project. Not *retry harder*, but **allocate three attempts well.**
 
+It also changes what counts as a result. A dunning dashboard reports money recovered this cycle; on this batch both arms recover within 2.3% of each other, so by that measure nothing happened. But the baseline paid **160 attempts** for its share and the sequencer paid **77**, and the difference is not efficiency for its own sake — a spent budget is a `halted` subscription, permanently. **Five subscriptions and ₹13,195 of monthly recurring revenue** is what separates the two arms, and a one-cycle recovery table cannot see it.
+
 **Vasooli is a batch engine plus a viewer.** The engine ingests at-risk subscriptions, classifies each failure, applies seven ordered stopping rules, schedules the survivors at their best lawful moment, executes under a circuit breaker, routes every refusal to a structured escalation, and writes the lot to a hash-chained audit trail. The web interface renders what the engine decided and computes nothing of its own.
 
 ---
@@ -93,16 +97,29 @@ Read this before judging any design decision, because most of them follow from c
 
 ### Headline
 
+> **Both arms recover roughly the same money this cycle. One of them spends half the budget doing it, and kills five fewer customers.**
+>
+> **₹13,195 per month — ₹158,340 a year — of recurring revenue that the baseline destroys and this engine keeps alive.**
+
+That is the number this project is actually about, and it needs the table below to explain why.
+
 |  | baseline | sequencer | delta |
 |---|---:|---:|---:|
-| Recovered | ₹57,571.00 | **₹58,875.00** | +₹1,304.00 |
-| Attempts spent | 160 | **77** | −83 |
+| Recovered, this cycle | ₹57,571.00 | ₹58,875.00 | +₹1,304.00 |
+| Attempts spent | 160 | **77** | **−83** |
 | Wasted attempts | 131 | **52** | −79 |
 | Refused by the money breaker | 3 | **0** | −3 |
-| Recoverable subscriptions halted | 27 | **22** | −5 |
-| **Recovered per attempt** | ₹359.82 | **₹764.61** | **+112.5%** |
+| Recovered per attempt | ₹359.82 | **₹764.61** | **+112.5%** |
+| **Recoverable subscriptions halted** | **27** | **22** | **−5** |
+| **Their recurring value** | **₹42,573.00/mo** | **₹29,378.00/mo** | **−₹13,195.00/mo** |
 
-The headline metric is **recovery per attempt**, not gross recovery, because the retry budget is the scarce resource: three attempts, then Razorpay halts the subscription and it is terminal.
+**Read the first row honestly: the money recovered this cycle is nearly identical.** ₹1,304 apart, 2.3%. If that were the whole claim there would be no project here, and any reader who stops at row one is right to be unimpressed.
+
+The claim is rows two and six. The baseline spends **160 attempts** to recover that money; the sequencer spends **77**. And because Razorpay's retry budget is three attempts deep and *terminal* — spend the third and the subscription is `halted`, permanently — what the baseline actually buys with those extra 83 attempts is **five dead subscriptions**.
+
+So `recovered per attempt` (+112.5%) is the efficiency statistic, not the point. The point is what the efficiency is *for*: a retry budget is a stock, not a flow, and the arm that conserves it still has customers next month. **₹13,195 a month of recurring revenue is the difference**, against a one-cycle recovery difference of ₹1,304 — the recurring number is ten times larger in the first month alone and compounds every month after.
+
+A one-cycle recovery table is the wrong frame for a subscription business, and it is the frame every dunning dashboard uses.
 
 **There is one basis.** Raw and compliance-adjusted recovery are now identical for both arms — ₹57,571.00 and ₹58,875.00, with ₹0 recovered above the RBI cap on either side. There is no adjustment left to argue about.
 
@@ -780,8 +797,10 @@ Everything in the original plan, plus everything found while building it. The pl
 1. **Parse promises from free text.** `promise.py` takes structured promises. A customer replying *"salary 5th ko aa raha hai"* is a real language problem and the natural third place for the model. The module states plainly that it does not do this yet.
 2. **Feed real outcomes to the bandit.** The negative result says learning pays only once assumptions are badly wrong. Finding out whether they are needs production data. **Blocked on data, not effort** — no amount of further simulation resolves it.
 3. **Anchor the ledger externally.** The chain is unforgeable without the key, but a key-holder can still rebuild it. Periodically publishing the root hash somewhere append-only would close that.
-4. **Exercise rule 7 with a batch.** Covered by tests, never triggered by a seeded batch.
-5. **Multi-currency and multi-region.** Everything is paise and RBI. The stopping rules are India-shaped by design.
+4. **Index the ledger before the webhook path sees volume.** `prior_failures()` and the replay check in `ingest()` are each a full-table scan, so a delivery costs **2n**. Free at the 453 rows a demo produces, first thing to break at a million. An index on `(event, subscription_id)` turns both into lookups and a per-subscription counter row removes one entirely — it is a schema migration, not a redesign, and the ceiling is named in the code rather than discovered later.
+5. **Calibrate the top confidence bucket.** The scheduler predicts 0.810 and observes 0.670 where it is most certain — over-confident by 0.14 exactly where it most wants to spend an attempt. `vasooli experiments` prints this and says so. It does not affect the arm comparison, since both arms are scored by the identical model, but a confidence this system reports is not yet a probability.
+6. **Exercise rule 7 with a batch.** Covered by tests, never triggered by a seeded batch.
+7. **Multi-currency and multi-region.** Everything is paise and RBI. The stopping rules are India-shaped by design.
 
 ### Deliberately not doing
 

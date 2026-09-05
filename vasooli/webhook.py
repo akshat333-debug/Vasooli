@@ -123,6 +123,15 @@ def prior_failures(ledger: Ledger, subscription_id: str) -> int:
     20): a healthy subscription with ten paid cycles arrived looking exhausted
     and was refused by rule 1 before anything else ran. Our own ledger is the
     only honest source, since it records exactly the failures we were told about.
+
+    SCALE CEILING, STATED: this is a full-table scan per event, O(rows). At the
+    453 rows a demo batch produces that is free; at a million it is the first
+    thing that breaks, and ingest() below scans a second time for replays, so
+    the real cost is 2n per delivery. The fix is not clever -- an index on
+    (event, subscription_id) turns both into lookups, and a per-subscription
+    counter row turns this one into a read. Left as a scan because the correct
+    source of truth was the point and an index is a schema migration; naming the
+    ceiling is cheaper than pretending it is not there.
     """
     n = 0
     for r in ledger.rows():
@@ -230,6 +239,9 @@ def ingest(
 
     # Razorpay retries deliveries. A replayed payment.failed counted twice would
     # spend a retry from a budget of three on one real failure.
+    #
+    # Second full-table scan of this delivery (see prior_failures above for the
+    # scale ceiling). Same fix: an index on (event, subscription_id).
     already = [r for r in ledger.rows() if r["event"] == "webhook_received"
                and r["subscription_id"] == event_id]
     if already:

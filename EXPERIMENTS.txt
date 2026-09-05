@@ -79,15 +79,24 @@ VASOOLI - EXPERIMENTS
 ----------------------------------------------------------------------------
 5. CALIBRATION - do the reported probabilities mean anything?
 ----------------------------------------------------------------------------
-      bucket      n   predicted   observed
-     0.0-0.2    340       0.166      0.165
-     0.4-0.6    889       0.512      0.474
-     0.6-0.8    752       0.633      0.582
-     0.8-1.0    185       0.810      0.670
+      bucket      n   predicted   observed      gap
+     0.0-0.2    340       0.166      0.165   -0.001
+     0.4-0.6    889       0.512      0.474   -0.038
+     0.6-0.8    752       0.633      0.582   -0.051
+     0.8-1.0    185       0.810      0.670   -0.140
 
   Internal consistency only: predictions and outcomes come from the same
   assumed model, so agreement shows the scheduler reads its own model
   correctly. It is not evidence about real banks.
+
+  NOT WELL CALIBRATED AT THE TOP. The 0.8-1.0 bucket predicts 0.810
+  and observes 0.670, over-confident by 0.140 across 185 attempts.
+  The scheduler is most wrong exactly where it is most sure, which is the
+  worst place to be wrong: those are the attempts it most wants to spend.
+  Cause is the per-attempt decay in sim/model.py compounding faster than
+  the scorer assumes when it reads the same curve back. It does not change
+  the arm comparison - both arms are scored by this identical model - but
+  a confidence this system reports should not be read as a probability.
 
 ----------------------------------------------------------------------------
 6. HAZARD REMOVED - does the result depend on late revocation?
