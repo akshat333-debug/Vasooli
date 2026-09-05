@@ -1,5 +1,5 @@
-VASOOLI - VOICEOVER SCRIPT FOR TEXT-TO-SPEECH
-=============================================
+VASOOLI - VOICEOVER SCRIPT FOR TEXT-TO-SPEECH (ElevenLabs v3)
+===============================================================
 
 Generate FOUR separate audio files, one per segment. Paste only the text
 between the "BEGIN" and "END" markers. Do not paste the headers, the notes,
@@ -9,15 +9,31 @@ Numbers are already written the way they should be read aloud. Do not
 "correct" them back into digits or symbols; a rupee sign or a slash will be
 read wrong by most generators.
 
-Recommended settings: measured, even-paced voice. Speed zero point nine five
-to one point zero. Nothing enthusiastic - the argument here works because the
-numbers are unflattering, and an excited read fights it.
+VOICE: switch off "Liam - Energetic, Social Media Creator" before recording.
+This script's persuasion comes from staying flat while the numbers do the
+work - the top row is "boring," the money difference is 2.3%, the close
+admits the scheduler is over-confident and that an earlier claim was wrong.
+An energetic, hype-voiced read fights every one of those beats. Pick a
+calmer, lower-energy preset - something built for narration or explainer
+content, not social media. Speed 0.95-1.0.
 
-Target: about four minutes forty seconds total.
+EMOTION TAGS: v3 supports bracketed direction tags like [sighs], [exhales],
+[curious]. Used exactly twice below, at the two moments that earn it - the
+"boring top row" admission and the "I was wrong" admission. Do not add more.
+Over-tagging destabilizes v3's output, and a heavily-tagged read would itself
+be the performative thing this script argues against. Everywhere else, let
+the words carry it; the ellipses and dashes already in the text are pacing
+cues v3 reads correctly on its own.
+
+If your generator is NOT ElevenLabs v3 (no tag support), just delete the two
+bracketed tags below and read the surrounding sentence as-is - nothing else
+in the script depends on them.
+
+Target: about four minutes forty-five seconds total.
 
 
 =============================================
-SEGMENT 1 - TERMINAL  (target about 2:00)
+SEGMENT 1 - TERMINAL  (target about 2:05)
 =============================================
 Visual: six commands run live in the terminal.
 
@@ -35,10 +51,10 @@ Two arms over the identical batch, same random draws. The baseline is the
 fixed schedule dunning tools ship. Vasooli diagnoses the failure first, then
 decides.
 
-Look at the top row, and notice that it is boring. About fifty-seven and a
-half thousand rupees against about fifty-nine thousand. Both arms recover
-roughly the same money this cycle. If that were my claim, I would not have a
-project.
+[sighs] Look at the top row, and notice that it is boring. About fifty-seven
+and a half thousand rupees against about fifty-nine thousand. Both arms
+recover roughly the same money this cycle. If that were my claim... I would
+not have a project.
 
 Here is the claim. The baseline spent one hundred and sixty attempts to get
 that. Vasooli spent seventy-seven. The budget is three deep and it does not
@@ -131,10 +147,10 @@ Two hundred and twenty-nine tests, hermetic. No network, no A P I key.
 Ninety-two per cent coverage.
 
 Twenty-seven logged defects, five found by an external reviewer who caught
-what I could not see in my own code. The most recent: I had been calling a
-halted subscription permanent, and it is not. Razorpay documents the way back.
-Correcting it made the claim smaller and made it true, and I would rather hand
-you the smaller claim.
+what I could not see in my own code. [exhales] The most recent: I had been
+calling a halted subscription permanent, and it is not. Razorpay documents the
+way back. Correcting it made the claim smaller and made it true, and I would
+rather hand you the smaller claim.
 
 Retries are a budget of three. Vasooli spends them on the failures that can
 actually be recovered, refuses the ones that cannot, loudly and on the record,

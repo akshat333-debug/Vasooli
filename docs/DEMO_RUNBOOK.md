@@ -34,6 +34,15 @@ and an excited read fights it. Speed 0.95–1.0. If your generator supports it,
 add a short pause between paragraphs; the script is written in paragraph blocks
 that correspond to what is on screen.
 
+**If using ElevenLabs v3:** the script has two `[sighs]` / `[exhales]` emotion
+tags built in, at the "boring top row" and "I was wrong" beats — deliberately
+just two, since v3's tagging destabilizes with overuse and a heavily-tagged
+read would itself feel performative. **Switch off any "energetic" voice
+preset first** — an upbeat delivery undercuts a script whose whole argument is
+that the flat, unflattering numbers are the honest ones. If your generator
+isn't v3 or doesn't support tags, delete the two bracketed tags and read
+through; nothing else depends on them.
+
 ---
 
 ## 1. Environment prep (before recording, not on camera)
