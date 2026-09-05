@@ -201,7 +201,7 @@ export default function AttemptLedger({
       <div className="space-y-7">
         <Row
           label="Baseline"
-          sub="fixed T+1 / T+3 / T+5, failure class not consulted"
+          sub="generic dunning cadence, T+1 / T+3 / T+5, failure class not consulted"
           records={records}
           arm={baseline}
           budget={budget}

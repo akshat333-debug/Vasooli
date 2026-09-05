@@ -50,7 +50,10 @@ const RULES: {
     plain:
       "The subscription has already used all three of its retries. A fourth "
       + "attempt does not fail politely — it moves the subscription to halted, "
-      + "which is terminal and cannot be undone.",
+      + "which stops automatic charging. It is not unrecoverable: Razorpay "
+      + "returns a halted subscription to active once the customer updates the "
+      + "payment method themselves. But the invoices it accrues meanwhile are "
+      + "never auto-charged, and the budget does not come back.",
     code: "rec.attempts_remaining <= 0",
     action: "STOP_EXHAUSTED",
     escalation: "WINBACK_CAMPAIGN",

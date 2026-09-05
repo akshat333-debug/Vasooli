@@ -21,7 +21,9 @@ export default function BatchPage() {
   // The number this project is actually about. Both arms recover within 2.3%
   // of each other THIS cycle; what separates them is how many recoverable
   // subscriptions each one drove to `halted`, because a spent retry budget is
-  // permanent. Leading with recovery-per-attempt invited the fair objection
+  // a one-way door for automatic collection: halted returns to active only when
+  // the customer updates the payment method, and its invoices never auto-charge.
+  // Leading with recovery-per-attempt invited the fair objection
   // that a ratio was doing the work.
   const haltedValue = (a: Arm) =>
     a.pushed_to_halt.reduce((t, o) => t + o.amount_paise, 0);
@@ -37,7 +39,13 @@ export default function BatchPage() {
     records[0];
   const tracedHash =
     ledger.entries.find(
-      (e) => e.subscription_id === traced.subscription_id && e.event === "decision",
+      (e) =>
+        e.subscription_id === traced.subscription_id &&
+        e.event === "decision" &&
+        // Both arms write a decision row for the same subscription. Without the
+        // arm filter this showed the baseline's hash beside the sequencer's
+        // refusal - the right subscription, the wrong decision.
+        e.arm === "sequencer",
     )?.hash ?? null;
 
   const preserved = sq.outcomes
@@ -55,7 +63,9 @@ export default function BatchPage() {
         <h1 className="display max-w-3xl text-[30px] leading-[1.12] font-semibold tracking-tight sm:text-[44px]">
           A failed debit gives you three attempts.
           <br />
-          <span className="text-ink-mute">Then the subscription is gone.</span>
+          <span className="text-ink-mute">
+            Then it stops charging itself.
+          </span>
         </h1>
         <p className="mt-5 max-w-2xl text-[15px] leading-relaxed text-ink-soft sm:text-[16px]">
           Most dunning systems spend those three on a fixed schedule and hope.
@@ -68,9 +78,11 @@ export default function BatchPage() {
           <strong className="font-semibold">the same money</strong> as the fixed
           schedule while spending{" "}
           <strong className="font-semibold">half the retry budget</strong> — and
-          leaves {subsSaved} more subscriptions alive, worth{" "}
+          leaves {subsSaved} more subscriptions still charging automatically,
+          worth{" "}
           <strong className="font-semibold">{rupees(recurringSaved)} a month</strong>{" "}
-          of recurring revenue the baseline destroys.
+          of recurring revenue the baseline pushes onto a manual,
+          customer-initiated path.
         </p>
       </header>
 
@@ -90,8 +102,8 @@ export default function BatchPage() {
           tone="sage"
           label="Recurring revenue kept alive"
           value={`${rupees(recurringSaved)}/mo`}
-          delta={`${subsSaved} fewer subscriptions killed`}
-          note={`Recoverable subscriptions each arm drove to halted: baseline ${bl.pushed_to_halt.length}, here ${sq.pushed_to_halt.length}. A spent retry budget is permanent, so this repeats every month — against a one-cycle recovery difference of ${rupees(sq.recovered_within_envelope_paise - bl.recovered_within_envelope_paise)}.`}
+          delta={`${subsSaved} fewer subscriptions halted`}
+          note={`Recoverable subscriptions each arm drove to halted: baseline ${bl.pushed_to_halt.length}, here ${sq.pushed_to_halt.length}. A halted subscription stops auto-charging and returns to active only if the customer updates the payment method themselves, so this recurs — against a one-cycle recovery difference of ${rupees(sq.recovered_within_envelope_paise - bl.recovered_within_envelope_paise)}.`}
         />
         <Stat
           tone="periwinkle"
@@ -118,12 +130,17 @@ export default function BatchPage() {
           <div>
             <p className="eyebrow mb-3 !text-clay-ink">Three layers, one answer</p>
             <h2 className="display text-[21px] leading-snug font-semibold sm:text-[25px]">
-              The baseline burned {bl.breaker_refusals} attempts on debits the
+              The baseline tried to present {bl.breaker_refusals} debits the
               network was never going to settle.
             </h2>
             <p className="mt-4 text-[14.5px] leading-relaxed text-ink-soft">
-              Above ₹15,000 the RBI e-mandate framework requires additional
-              factor authentication, so an unattended presentation is declined.
+              They cost it no retries — the breaker refused them at the action
+              boundary, before presentation, so all three spent zero attempts.
+              That is the layering working, and it is worth being precise about:
+              the waste prevented here is the attempt that <em>would</em> have
+              been spent, not one that was. Above ₹15,000 the RBI e-mandate
+              framework requires additional factor authentication, so an
+              unattended presentation is declined.
               Three independent layers refuse it here: the stopping rule
               declines to schedule it, the money-side breaker refuses it at the
               action boundary, and the simulated world declines it on

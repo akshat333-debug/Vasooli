@@ -48,6 +48,26 @@ probability bucket — most wrong exactly where it is most sure. And rule 7 has
 never fired on a seeded batch; it is covered by tests only. Both are in
 README §17 and the second is in the ablation table as a row that does nothing.
 
+**"`halted` isn't permanent. A customer can update their card and it reactivates."**
+
+Correct, and the project says so — README §1 quotes the documentation on both
+halves. A halted subscription returns to `active` when the customer changes the
+card details. What does not come back is the automation: the invoices accrued
+while halted are still created but never charged, so they become manual work,
+and reactivation depends entirely on a disengaged customer choosing to act. The
+claim here is not "five customers destroyed" — it is five monthly collections
+moved off autopilot onto the one channel dunning is worst at. That is a smaller
+claim than the one an earlier draft made, and it is the one the docs support.
+
+**"T+1/T+3/T+5 isn't Razorpay's retry schedule."**
+
+It is not, and the README says so explicitly (§17 baseline note). Razorpay's
+native card retry is T+1/T+2/T+3. The baseline arm is the generic fixed-interval
+cadence that third-party dunning tools ship, which is the thing the sequencer is
+actually being argued against. The spacing is not load-bearing: both arms draw on
+the same three-attempt budget and are scored against identical seeded outcomes,
+so the comparison isolates allocation strategy, not calendar arithmetic.
+
 **"Your headline is +112.5% but the money recovered differs by 2.3%."**
 
 Correct, and the README leads with the recurring number for that reason. Both

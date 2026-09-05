@@ -2,7 +2,7 @@
 
 **Treats subscription retries as a regulated, three-attempt budget, and spends them only on the failures that can actually be recovered.**
 
-On a 100-subscription batch it recovers the same money as a fixed-schedule baseline using **half the retry budget**, and leaves **five fewer subscriptions dead** — **₹13,195/month of recurring revenue** the baseline destroys. ([How that is measured](#4-the-measured-result).)
+On a 100-subscription batch it recovers the same money as a fixed-schedule baseline using **half the retry budget**, and pushes **five fewer subscriptions into `halted`** — **₹13,195/month of recurring revenue** still collecting automatically instead of waiting on the customer to fix their card. ([How that is measured](#4-the-measured-result).)
 
 Razorpay AI Buildathon 2026 · Track 03, AI Revenue Recovery
 
@@ -37,23 +37,25 @@ Razorpay AI Buildathon 2026 · Track 03, AI Revenue Recovery
 
 ## 1. What this is, in one page
 
-A recurring debit fails on Razorpay. Razorpay auto-retries. When the retries run out, the subscription moves to `halted` and the customer is gone.
+A recurring debit fails on Razorpay. Razorpay auto-retries on a bounded schedule. When the retries run out, the subscription moves to `halted` — and automatic collection for that customer stops.
 
-Most dunning systems treat a retry as free and burn it on a fixed T+1 / T+3 / T+5 schedule. Retries are not free. Every failed debit carries a hard, externally imposed budget:
+`halted` is not a deleted customer, and this project does not claim it is. Razorpay documents the way back: *"If the customer successfully changes the card details when a Subscription is in the `halted` state, it moves to the `active` state."* What it also documents is the cost of getting there — *"Invoices for such Subscriptions are still created. However, we will not charge these invoices. You will have to charge them manually."* So a halted subscription converts an automatic monthly collection into one that requires **the customer to act first**, and leaves its unpaid invoices as manual work that will never auto-charge again. Recoverable, but only through the one channel that recovery funnels are worst at: getting a disengaged customer to do something.
+
+Most dunning systems treat a retry as free and burn it on a fixed interval schedule. Retries are not free. Every failed debit carries a hard, externally imposed budget:
 
 | Constraint | Source |
 |---|---|
-| ~3 retries, then the subscription halts, permanently | Razorpay Subscriptions |
+| 3 retries after the initial charge (T+1, T+2, T+3), then the subscription moves to `halted` and stops auto-charging | Razorpay Subscriptions |
 | A pre-debit notification must precede any debit | RBI e-mandate framework, 2026 |
 | ₹15,000 cap on an unattended recurring debit; above it, AFA is required and an unattended presentation is **declined** | RBI e-mandate framework, 2026 |
 | A debit above `mandate_max_amount` is rejected on presentation | mandate terms |
 | A revoked or expired mandate can never be debited | mandate lifecycle |
 
-So a retry is an **irreversible, regulated, capped action drawn against a scarce budget.** Spending one on a revoked mandate is money that can never be recovered, and nothing in a normal dashboard will tell you it happened.
+So a retry is an **irreversible, regulated, capped action drawn against a scarce budget.** The attempt itself does not come back — spending one on a revoked mandate is a draw against the budget that bought nothing, and nothing in a normal dashboard will tell you it happened.
 
 That reframing is the whole project. Not *retry harder*, but **allocate three attempts well.**
 
-It also changes what counts as a result. A dunning dashboard reports money recovered this cycle; on this batch both arms recover within 2.3% of each other, so by that measure nothing happened. But the baseline paid **160 attempts** for its share and the sequencer paid **77**, and the difference is not efficiency for its own sake — a spent budget is a `halted` subscription, permanently. **Five subscriptions and ₹13,195 of monthly recurring revenue** is what separates the two arms, and a one-cycle recovery table cannot see it.
+It also changes what counts as a result. A dunning dashboard reports money recovered this cycle; on this batch both arms recover within 2.3% of each other, so by that measure nothing happened. But the baseline paid **160 attempts** for its share and the sequencer paid **77**, and the difference is not efficiency for its own sake — a spent budget is a `halted` subscription, which stops auto-charging until the customer themselves fixes the payment method. **Five subscriptions and ₹13,195 of monthly recurring revenue** is what separates the two arms: not revenue destroyed outright, but revenue moved off autopilot and onto a manual, customer-initiated path that most of it will not survive. A one-cycle recovery table cannot see any of it.
 
 **Vasooli is a batch engine plus a viewer.** The engine ingests at-risk subscriptions, classifies each failure, applies seven ordered stopping rules, schedules the survivors at their best lawful moment, executes under a circuit breaker, routes every refusal to a structured escalation, and writes the lot to a hash-chained audit trail. The web interface renders what the engine decided and computes nothing of its own.
 
@@ -66,7 +68,7 @@ It also changes what counts as a result. A dunning dashboard reports money recov
 | **Repo** | `github.com/akshat333-debug/Vasooli`, branch `main` |
 | **Engine** | Python 3.11+, 18 modules, ~4,710 lines |
 | **Interface** | Next.js 15 + TypeScript + Tailwind v4, ~3,000 lines, 5 pages |
-| **Tests** | **213**, hermetic: no network, no API keys, no gateway |
+| **Tests** | **229**, hermetic: no network, no API keys, no gateway |
 | **Coverage** | **92%** on the engine (CI floor 90%) |
 | **Lint** | `ruff` clean; `tsc --noEmit` clean |
 | **CI** | GitHub Actions, engine + web, given no credentials on purpose |
@@ -81,7 +83,7 @@ Everything below is reproducible from a clean clone with `uv run pytest` and `uv
 
 Read this before judging any design decision, because most of them follow from constraints rather than taste.
 
-**The retry budget is three, and it is terminal.** Razorpay retries a failed subscription charge a bounded number of times, then moves the subscription to `halted`. There is no fourth attempt and no undo. This makes an attempt a *scarce resource*, which is unusual — most systems optimise a rate, this one optimises an allocation.
+**The retry budget is three, and it does not refill.** Razorpay retries a failed card charge on a T+1 / T+2 / T+3 cycle — three retries after the original attempt — and then moves the subscription to `halted`. There is no fourth attempt on that cycle. The subscription itself can come back (see §1: the customer updates the card and it returns to `active`), but the *budget* cannot: those three attempts are spent, and the invoices accumulated while halted must be charged by hand. This makes an attempt a *scarce resource*, which is unusual — most systems optimise a rate, this one optimises an allocation.
 
 **The RBI e-mandate framework (2026) sets hard limits.** A pre-debit notification must reach the customer before the debit. Unattended recurring debits are capped at ₹15,000 (₹1L for certain categories); above that, additional factor authentication is required, which means an unattended presentation is not merely disallowed — it is **declined**. Both apply equally to UPI AutoPay and card e-mandates. A system that ignores these is not "more aggressive", it is spending its scarce attempts on debits that cannot settle.
 
@@ -97,9 +99,9 @@ Read this before judging any design decision, because most of them follow from c
 
 ### Headline
 
-> **Both arms recover roughly the same money this cycle. One of them spends half the budget doing it, and kills five fewer customers.**
+> **Both arms recover roughly the same money this cycle. One of them spends half the budget doing it, and halts five fewer subscriptions.**
 >
-> **₹13,195 per month — ₹158,340 a year — of recurring revenue that the baseline destroys and this engine keeps alive.**
+> **₹13,195 per month — ₹158,340 a year — of recurring revenue still collecting on autopilot rather than waiting on a customer to update their card.**
 
 That is the number this project is actually about, and it needs the table below to explain why.
 
@@ -115,9 +117,9 @@ That is the number this project is actually about, and it needs the table below 
 
 **Read the first row honestly: the money recovered this cycle is nearly identical.** ₹1,304 apart, 2.3%. If that were the whole claim there would be no project here, and any reader who stops at row one is right to be unimpressed.
 
-The claim is rows two and six. The baseline spends **160 attempts** to recover that money; the sequencer spends **77**. And because Razorpay's retry budget is three attempts deep and *terminal* — spend the third and the subscription is `halted`, permanently — what the baseline actually buys with those extra 83 attempts is **five dead subscriptions**.
+The claim is rows two and six. The baseline spends **160 attempts** to recover that money; the sequencer spends **77**. And because the retry budget is three attempts deep and does not refill, what the baseline actually buys with those extra 83 attempts is **five more subscriptions pushed into `halted`** — five that stop auto-charging, whose unpaid invoices become manual work, and that only return to `active` if the customer themselves updates the payment method (§1).
 
-So `recovered per attempt` (+112.5%) is the efficiency statistic, not the point. The point is what the efficiency is *for*: a retry budget is a stock, not a flow, and the arm that conserves it still has customers next month. **₹13,195 a month of recurring revenue is the difference**, against a one-cycle recovery difference of ₹1,304 — the recurring number is ten times larger in the first month alone and compounds every month after.
+So `recovered per attempt` (+112.5%) is the efficiency statistic, not the point. The point is what the efficiency is *for*: a retry budget is a stock, not a flow, and the arm that conserves it still has those five collecting automatically next month. **₹13,195 a month of recurring revenue is the difference**, against a one-cycle recovery difference of ₹1,304 — ten times larger in the first month alone, and it recurs. Not "revenue destroyed": revenue moved off autopilot onto a customer-initiated path, which is the same distinction any honest churn model makes.
 
 A one-cycle recovery table is the wrong frame for a subscription business, and it is the frame every dunning dashboard uses.
 
@@ -418,7 +420,7 @@ So the sequencer cannot win by getting luckier records. It can only win by choos
 
 **Four physical constraints bind both arms** before any probability is considered: a dead mandate cannot be debited, a debit above the mandate's own registered cap is rejected, a debit above the RBI AFA-free cap is declined for want of additional factor authentication, and a debit presented after expiry is rejected. These are properties of the world, not of strategy, and `_attempt()` takes no `arm` argument by which it could tell them apart — a test parses its AST and fails if the word reappears.
 
-**The baseline is naive about strategy, not about law.** It retries on a fixed T+1/T+3/T+5 schedule and ignores failure class and mandate state. It still respects the RBI pre-debit notice floor and the same batch breaker, because comparing a compliant system against a non-compliant one would prove nothing.
+**The baseline is naive about strategy, not about law.** It retries on a fixed T+1/T+3/T+5 schedule and ignores failure class and mandate state. **This is a conventional dunning cadence, not Razorpay's own** — Razorpay's native card retry is T+1/T+2/T+3, and the arm here is deliberately the generic fixed-interval scheduler that dunning tools ship, which is what the sequencer is being argued against. Nothing in the comparison turns on the spacing: both arms draw on the same three-attempt budget and are scored against identical seeded outcomes. It still respects the RBI pre-debit notice floor and the same batch breaker, because comparing a compliant system against a non-compliant one would prove nothing.
 
 **The late-revocation hazard.** A deterministic 8% of subscriptions have their mandate revoked between the decision and the attempt. This is modelled as `mandate_status_at(record)` — **the world, with no arm argument** — and `_attempt()` consults it for either arm, so a debit presented against a revoked mandate fails whoever presented it.
 

@@ -43,6 +43,13 @@ The baseline retries on a fixed T+1/T+3/T+5 schedule and ignores failure class
 and mandate state — that is what it is for. It still respects the RBI pre-debit
 notice floor and the same batch-level breaker, because comparing a compliant
 system against a non-compliant one would prove nothing.
+
+To be exact about what this arm is: T+1/T+3/T+5 is the generic fixed-interval
+cadence third-party dunning tools ship, NOT Razorpay's own retry schedule, which
+is T+1/T+2/T+3 for cards. The arm models the tool a merchant bolts on, not the
+platform underneath it. The spacing is not load-bearing either way — both arms
+draw on the same three-attempt budget and are scored against identical seeded
+draws, so what the comparison isolates is allocation strategy, not the calendar.
 """
 
 from __future__ import annotations
