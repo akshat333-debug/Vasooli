@@ -245,51 +245,23 @@ export default function MethodPage() {
           day. Both are printed by `vasooli experiments` in its own output. */}
       <section className="mb-10">
         <h2 className="display mb-1.5 text-[20px] font-semibold">
-          What is still wrong
+          Open as of submission
         </h2>
-        <p className="mb-5 text-[14px] leading-relaxed text-ink-mute">
-          Everything above is a defect that was found and fixed, which is a
-          flattering shape for a list to have. These are open as of submission,
-          and the engine reports both of them itself rather than waiting to be
-          asked.
-        </p>
-        <div className="space-y-3">
-          <div className="rounded-2xl border border-clay/40 bg-clay-soft/30 p-5">
-            <h3 className="mb-1.5 text-[14.5px] leading-snug font-semibold">
-              The scheduler is most wrong where it is most confident
-            </h3>
-            <p className="text-[13.5px] leading-relaxed text-ink-soft">
-              In its top probability bucket it predicts{" "}
-              <span className="tnum font-mono text-[12.5px]">0.810</span> and
-              observes <span className="tnum font-mono text-[12.5px]">0.670</span>{" "}
-              across 185 attempts — over-confident by{" "}
-              <span className="tnum font-mono text-[12.5px]">0.140</span> exactly
-              where it most wants to spend an attempt, which is the worst place
-              to be wrong. The cause is the per-attempt decay in{" "}
-              <span className="font-mono text-[12.5px]">sim/model.py</span>{" "}
-              compounding faster than the scorer assumes when it reads the same
-              curve back. It does not change the arm comparison, because both
-              arms are scored by this identical model — but a confidence this
-              system reports should not be read as a probability.{" "}
-              <span className="font-mono text-[12.5px]">vasooli experiments</span>{" "}
-              prints this as a warning in its own calibration table.
-            </p>
-          </div>
-          <div className="rounded-2xl border border-clay/40 bg-clay-soft/30 p-5">
-            <h3 className="mb-1.5 text-[14.5px] leading-snug font-semibold">
-              Rule 7 has never fired on a seeded batch
-            </h3>
-            <p className="text-[13.5px] leading-relaxed text-ink-soft">
-              The no-lawful-window-before-expiry rule exists because the
-              scheduler could once manufacture exactly that case (finding 01
-              above). It is covered by tests, and it appears in the ablation
-              table as a row that changes nothing. It has never been exercised
-              by a real batch, so it is verified logic rather than demonstrated
-              behaviour, and this page would rather say so than let the rulebook
-              imply all seven rules are load-bearing.
-            </p>
-          </div>
-        </div>
+        <ul className="space-y-1.5 text-[13.5px] leading-relaxed text-ink-mute">
+          <li>
+            <strong className="font-semibold text-ink-soft">
+              Top-bucket calibration:
+            </strong>{" "}
+            predicts 0.810, observes 0.670 (n=185) — self-reported by{" "}
+            <span className="font-mono text-[12.5px]">vasooli experiments</span>,
+            doesn&rsquo;t affect the arm comparison.
+          </li>
+          <li>
+            <strong className="font-semibold text-ink-soft">Rule 7:</strong>{" "}
+            tested, never triggered by a seeded batch — verified logic, not
+            demonstrated behaviour.
+          </li>
+        </ul>
       </section>
 
       <footer className="border-t border-rule pt-6 text-[12.5px] leading-relaxed text-ink-faint">
