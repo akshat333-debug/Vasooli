@@ -40,6 +40,10 @@ const FINDINGS = [
     d: "RecoveryPolicy declared a per-debit cap of \u20b915,000 and a three-attempt budget, both with comments saying they must never be exceeded, and enforced neither. Neither field was read anywhere in the engine. This was the third instance of the same shape in the log, after an inert cost limit and a breaker that truncated the measurement it protected. Both are enforced now, as a refusal that lets the batch continue rather than a trip that stops it.",
   },
   {
+    t: "My opening premise was wrong for the entire build",
+    d: "Every page of this project used to say a halted subscription was permanent — terminal, gone for good, no undo — and the whole recurring-revenue claim rested on it. An external reviewer challenged it on the last day. Razorpay's own documentation: “If the customer successfully changes the card details when a Subscription is in the halted state, it moves to the active state.” The premise had survived from the planning document, written before any code existed, all the way into a public README. What the documentation does support is narrower: halted stops charging automatically, the invoices it accrues are “still created. However, we will not charge these invoices. You will have to charge them manually”, and reactivation depends on a disengaged customer acting. So the claim is now five monthly collections moved off autopilot, not five customers destroyed. It is the smaller claim, and it is the one that is true.",
+  },
+  {
     t: "The late-revocation hazard favoured my own arm by name",
     d: "A mandate can die between the decision and the debit. That was implemented as the same hash function called on both code paths, gated on the arm's name \u2014 so it was a rule that favoured the sequencer rather than a fact both arms faced. It is now a property of the record that takes no arm argument at all, and a test parses the attempt function's syntax tree and fails if the word reappears in it. Published sensitivity: removing the hazard entirely costs 8% of the gain.",
   },
@@ -234,6 +238,58 @@ export default function MethodPage() {
           </strong>{" "}
           A dependency being right does not make your use of it safe.
         </p>
+      </section>
+
+      {/* Everything above is a defect that got fixed, which is a flattering
+          shape for a list to have. These are the ones still open on submission
+          day. Both are printed by `vasooli experiments` in its own output. */}
+      <section className="mb-10">
+        <h2 className="display mb-1.5 text-[20px] font-semibold">
+          What is still wrong
+        </h2>
+        <p className="mb-5 text-[14px] leading-relaxed text-ink-mute">
+          Everything above is a defect that was found and fixed, which is a
+          flattering shape for a list to have. These are open as of submission,
+          and the engine reports both of them itself rather than waiting to be
+          asked.
+        </p>
+        <div className="space-y-3">
+          <div className="rounded-2xl border border-clay/40 bg-clay-soft/30 p-5">
+            <h3 className="mb-1.5 text-[14.5px] leading-snug font-semibold">
+              The scheduler is most wrong where it is most confident
+            </h3>
+            <p className="text-[13.5px] leading-relaxed text-ink-soft">
+              In its top probability bucket it predicts{" "}
+              <span className="tnum font-mono text-[12.5px]">0.810</span> and
+              observes <span className="tnum font-mono text-[12.5px]">0.670</span>{" "}
+              across 185 attempts — over-confident by{" "}
+              <span className="tnum font-mono text-[12.5px]">0.140</span> exactly
+              where it most wants to spend an attempt, which is the worst place
+              to be wrong. The cause is the per-attempt decay in{" "}
+              <span className="font-mono text-[12.5px]">sim/model.py</span>{" "}
+              compounding faster than the scorer assumes when it reads the same
+              curve back. It does not change the arm comparison, because both
+              arms are scored by this identical model — but a confidence this
+              system reports should not be read as a probability.{" "}
+              <span className="font-mono text-[12.5px]">vasooli experiments</span>{" "}
+              prints this as a warning in its own calibration table.
+            </p>
+          </div>
+          <div className="rounded-2xl border border-clay/40 bg-clay-soft/30 p-5">
+            <h3 className="mb-1.5 text-[14.5px] leading-snug font-semibold">
+              Rule 7 has never fired on a seeded batch
+            </h3>
+            <p className="text-[13.5px] leading-relaxed text-ink-soft">
+              The no-lawful-window-before-expiry rule exists because the
+              scheduler could once manufacture exactly that case (finding 01
+              above). It is covered by tests, and it appears in the ablation
+              table as a row that changes nothing. It has never been exercised
+              by a real batch, so it is verified logic rather than demonstrated
+              behaviour, and this page would rather say so than let the rulebook
+              imply all seven rules are load-bearing.
+            </p>
+          </div>
+        </div>
       </section>
 
       <footer className="border-t border-rule pt-6 text-[12.5px] leading-relaxed text-ink-faint">

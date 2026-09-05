@@ -88,7 +88,11 @@ export interface Arm {
   wasted_attempts: number;
   /** Debits the money-side breaker refused at the action boundary. */
   breaker_refusals: number;
-  /** Recoverable subscriptions this arm drove to `halted`. Customers lost. */
+  /** Recoverable subscriptions this arm drove to `halted`. NOT customers lost:
+   *  Razorpay returns a halted subscription to `active` once the customer
+   *  updates the card. What is lost is the automation — it stops charging on
+   *  its own, the invoices it accrues meanwhile are never auto-charged, and
+   *  recovery now depends on a disengaged person acting. */
   pushed_to_halt: {
     subscription_id: string;
     amount_paise: number;

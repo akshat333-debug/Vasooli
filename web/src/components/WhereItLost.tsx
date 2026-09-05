@@ -92,6 +92,27 @@ export default function WhereItLost({
           getting there, which is why recovery per attempt is the metric and
           gross recovery is not.
         </p>
+        {/* The choice of metric is the objection this project is most exposed
+            to, so the number that makes it uncomfortable is printed here rather
+            than left to be discovered. Source: `vasooli experiments --seeds 40`
+            section 1c, seeds 1-40, same sweep as the ablation table. */}
+        <p className="mt-3 rounded-lg border border-rule bg-paper px-3.5 py-3 text-[12.5px] leading-relaxed text-ink-mute">
+          <strong className="font-semibold text-ink-soft">
+            And the crude question, since choosing a metric is exactly where a
+            reader should be suspicious:
+          </strong>{" "}
+          which arm simply collected more money, budget ignored? Across 40 seeds
+          the sequencer wins that one in{" "}
+          <strong className="font-semibold text-ink-soft">25</strong>, ties 1 and
+          loses 14 — median <span className="tnum">+₹1,047</span>, worst seed{" "}
+          <span className="tnum">−₹12,695</span>. That is the weakest number in
+          this project and <code className="font-mono">vasooli experiments</code>{" "}
+          prints it unprompted. The argument for the rate is that the budget is
+          three deep and does not refill, so the arm that collects the same money
+          on half of it starts next cycle with something left. Judge that claim
+          on the rate; the total is here so the choice is visible rather than
+          convenient.
+        </p>
       </div>
     </section>
   );
