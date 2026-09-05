@@ -5,6 +5,15 @@ description = "Bounded subscription-recovery sequencer. Treats mandate retries a
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
+keywords = ["razorpay", "payments", "subscriptions", "dunning", "payment-recovery", "fintech"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Financial and Insurance Industry",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Office/Business :: Financial",
+]
 dependencies = [
     "pydantic>=2.9",
     "runfuse[openai]>=0.1",
@@ -26,6 +35,10 @@ razorpay = ["razorpay>=1.4"]
 # collection errors. CI never caught it because CI installs the extra by name.
 [dependency-groups]
 dev = ["pytest>=8.0", "coverage>=7.6", "hypothesis>=6.100", "ruff>=0.6"]
+
+[project.urls]
+Homepage = "https://akshat333-debug.github.io/Vasooli/"
+Repository = "https://github.com/akshat333-debug/Vasooli"
 
 [project.scripts]
 vasooli = "vasooli.cli:main"

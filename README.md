@@ -1,5 +1,11 @@
 # Vasooli
 
+[![CI](https://github.com/akshat333-debug/Vasooli/actions/workflows/ci.yml/badge.svg)](https://github.com/akshat333-debug/Vasooli/actions/workflows/ci.yml)
+[![Pages](https://github.com/akshat333-debug/Vasooli/actions/workflows/pages.yml/badge.svg)](https://github.com/akshat333-debug/Vasooli/actions/workflows/pages.yml)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](pyproject.toml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-informational)](LICENSE)
+[![229 tests](https://img.shields.io/badge/tests-229%20passing-brightgreen)](tests/)
+
 **Treats subscription retries as a regulated, three-attempt budget, and spends them only on the failures that can actually be recovered.**
 
 On a 100-subscription batch it recovers the same money as a fixed-schedule baseline using **half the retry budget**, and pushes **five fewer subscriptions into `halted`** — **₹13,195/month of recurring revenue** still collecting automatically instead of waiting on the customer to fix their card. ([How that is measured](#4-the-measured-result).)

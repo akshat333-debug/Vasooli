@@ -27,10 +27,29 @@ export const viewport: Viewport = {
   ],
 };
 
+const TITLE = "Vasooli: bounded subscription recovery";
+const DESCRIPTION =
+  "Treats subscription retries as a regulated, three-attempt budget, and spends them only on the failures that can actually be recovered. Razorpay AI Buildathon 2026, Track 03.";
+const SITE_URL = "https://akshat333-debug.github.io/Vasooli/";
+
 export const metadata: Metadata = {
-  title: "Vasooli: bounded subscription recovery",
-  description:
-    "Treats subscription retries as a regulated, three-attempt budget, and spends them only on the failures that can actually be recovered.",
+  metadataBase: new URL(SITE_URL),
+  title: TITLE,
+  description: DESCRIPTION,
+  // No image asset -- these still improve how the link renders when shared
+  // (Slack, WhatsApp, X all read title/description even without an og:image).
+  openGraph: {
+    title: TITLE,
+    description: DESCRIPTION,
+    url: SITE_URL,
+    siteName: "Vasooli",
+    type: "website",
+  },
+  twitter: {
+    card: "summary",
+    title: TITLE,
+    description: DESCRIPTION,
+  },
 };
 
 export default function RootLayout({
